@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `ProcessGroup` — a shared kill-on-close container (and a `ProcessRunner`): run
+  several children through it and `close()` reaps the whole tree, grandchildren
+  included; `shutdown()` adds a graceful SIGTERM→grace→SIGKILL tier on Unix;
+  `mechanism` reports the active containment primitive.
+- `outputAll` / `outputAllBytes` — run a batch of commands with a concurrency cap,
+  collecting every outcome in order (a failure never short-circuits the batch).
 - `Command` — a fluent builder (program, args, `workingDir`, `env`/`clearEnv`,
   `timeout`) with `suspend` verbs: `run` / `runUnit` / `outputString` /
   `outputBytes` / `exitCode` / `probe`. Each run is contained in its own

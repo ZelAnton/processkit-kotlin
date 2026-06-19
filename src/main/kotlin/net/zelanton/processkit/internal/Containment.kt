@@ -54,6 +54,13 @@ internal interface Containment : AutoCloseable {
     /** Hard-kill every member of the container (grandchildren included). */
     fun killAll()
 
+    /**
+     * Ask members to stop gracefully (POSIX `SIGTERM`). Returns `true` if a
+     * graceful signal was actually sent; `false` where the mechanism has no
+     * graceful stop (Windows Job Objects — use [killAll] there).
+     */
+    fun requestStop(): Boolean
+
     override fun close() {
         killAll()
     }
@@ -130,6 +137,15 @@ internal class PosixGroupContainment : Containment {
             groupLeaders.clear()
         }
     }
+
+    override fun requestStop(): Boolean {
+        synchronized(groupLeaders) {
+            for (pgid in groupLeaders) {
+                Libc.killGroup(pgid, Libc.SIGTERM)
+            }
+        }
+        return true
+    }
 }
 
 /**
@@ -160,6 +176,9 @@ internal class WindowsJobContainment : Containment {
         Win32.terminateJob(job)
     }
 
+    // Job Objects have no graceful-stop signal; close()/killAll() is atomic.
+    override fun requestStop(): Boolean = false
+
     override fun close() {
         try {
             Win32.terminateJob(job)
@@ -172,6 +191,7 @@ internal class WindowsJobContainment : Containment {
 /** Minimal libc bindings (POSIX). */
 internal object Libc {
     internal const val SIGKILL: Int = 9
+    internal const val SIGTERM: Int = 15
 
     private val linker: Linker = Linker.nativeLinker()
 
