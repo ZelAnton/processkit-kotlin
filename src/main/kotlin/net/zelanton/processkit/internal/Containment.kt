@@ -10,6 +10,7 @@ import java.lang.foreign.MemorySegment
 import java.lang.foreign.SymbolLookup
 import java.lang.foreign.ValueLayout
 import java.lang.invoke.MethodHandle
+import java.nio.file.Path
 
 /** The host operating system, detected once. */
 internal enum class Os {
@@ -43,7 +44,12 @@ internal interface Containment : AutoCloseable {
     val mechanism: Mechanism
 
     /** Spawn [command] as a member of this container. */
-    fun spawn(command: List<String>): Process
+    fun spawn(
+        command: List<String>,
+        workingDir: Path? = null,
+        environment: Map<String, String> = emptyMap(),
+        clearEnvironment: Boolean = false,
+    ): Process
 
     /** Hard-kill every member of the container (grandchildren included). */
     fun killAll()
@@ -56,10 +62,36 @@ internal interface Containment : AutoCloseable {
         fun create(): Containment =
             when (Os.current) {
                 Os.WINDOWS -> WindowsJobContainment()
-                Os.LINUX, Os.MACOS -> PosixGroupContainment()
+                Os.LINUX -> PosixGroupContainment()
+                // macOS lacks the `setsid` launcher this backend uses; the native
+                // posix_spawn backend lands in a later increment.
+                Os.MACOS -> throw IOException(
+                    "processkit: the macOS backend is not implemented yet (Windows and Linux are supported)",
+                )
                 Os.OTHER -> throw IOException("processkit has no containment backend for this OS")
             }
     }
+}
+
+/** Build a [ProcessBuilder] with the working directory and environment applied. */
+internal fun newProcessBuilder(
+    command: List<String>,
+    workingDir: Path?,
+    environment: Map<String, String>,
+    clearEnvironment: Boolean,
+): ProcessBuilder {
+    val builder = ProcessBuilder(command)
+    if (workingDir != null) {
+        builder.directory(workingDir.toFile())
+    }
+    val env = builder.environment()
+    if (clearEnvironment) {
+        env.clear()
+    }
+    for ((name, value) in environment) {
+        env[name] = value
+    }
+    return builder
 }
 
 /**
@@ -76,8 +108,16 @@ internal class PosixGroupContainment : Containment {
     // setsid makes the leader's pgid == its pid, so we track pids as pgids.
     private val groupLeaders = mutableListOf<Long>()
 
-    override fun spawn(command: List<String>): Process {
-        val process = ProcessBuilder(listOf("setsid") + command).start()
+    override fun spawn(
+        command: List<String>,
+        workingDir: Path?,
+        environment: Map<String, String>,
+        clearEnvironment: Boolean,
+    ): Process {
+        // `setsid` runs the target in a fresh session/group; working dir and env
+        // are applied to setsid and inherited by the target it execs.
+        val process =
+            newProcessBuilder(listOf("setsid") + command, workingDir, environment, clearEnvironment).start()
         synchronized(groupLeaders) { groupLeaders.add(process.pid()) }
         return process
     }
@@ -102,11 +142,16 @@ internal class WindowsJobContainment : Containment {
 
     private val job: MemorySegment = Win32.createKillOnCloseJob()
 
-    override fun spawn(command: List<String>): Process {
+    override fun spawn(
+        command: List<String>,
+        workingDir: Path?,
+        environment: Map<String, String>,
+        clearEnvironment: Boolean,
+    ): Process {
         // ProcessBuilder gives no race-free assignment hook, so the child is
         // assigned immediately after start. The residual window (a child that
         // forks before assignment) is closed by CREATE_SUSPENDED in a later step.
-        val process = ProcessBuilder(command).start()
+        val process = newProcessBuilder(command, workingDir, environment, clearEnvironment).start()
         Win32.assignToJob(job, process.pid())
         return process
     }

@@ -29,6 +29,10 @@ foojay-resolver = "1.0.0"
 binary-compatibility-validator = "0.18.1"
 # Kover — Kotlin code coverage (JetBrains). Adds koverHtmlReport / koverVerify.
 kover = "0.9.8"
+# Kotlin coroutines — the async core of the library (suspend verbs, Flow
+# streaming, structured-concurrency cancellation). The `-test` artifact provides
+# runTest + the virtual clock used to test timeouts/backoff without real waits.
+kotlinx-coroutines = "1.10.2"
 
 [libraries]
 # JUnit BOM — aligns every junit-* artifact to one version; the dependencies
@@ -36,6 +40,9 @@ kover = "0.9.8"
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 
 # Bundles group related libraries so a build script can pull them with a single
 # alias, e.g. `testImplementation(libs.bundles.testing)`. Uncomment and extend

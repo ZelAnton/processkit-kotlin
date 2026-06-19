@@ -1,4 +1,8 @@
 plugins {
+    // java-library provides the `api` configuration — coroutines are part of this
+    // library's public surface (suspend verbs, later Flow), so consumers must get
+    // them transitively.
+    `java-library`
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ktlint)
     // Publishing to Maven Central via the Sonatype Central Portal. This plugin
@@ -7,11 +11,12 @@ plugins {
     // cannot). Remove it (and the `mavenPublishing` block below) for an app or
     // internal-only library.
     alias(libs.plugins.maven.publish)
-    // Public-API tracking (opt-in). Uncomment, then run `./gradlew apiDump` once
-    // and commit the generated `api/` directory. `apiCheck` then runs as part of
-    // `build` and fails on any unintended public-API change — the natural
-    // companion to explicitApi(). Left off by default so the template builds
-    // green before a baseline exists.
+    // Public-API tracking — DEFERRED. The standalone binary-compatibility-validator
+    // (0.18.x, now frozen) bundles an ASM that cannot read Java 25 bytecode
+    // ("Unsupported class file major version 69"), and the KGP-native replacement is
+    // still experimental. Re-enable (then `./gradlew apiDump` and commit `api/`) once
+    // one of them supports JVM 25; until then the public API is tracked via the
+    // CHANGELOG and review.
     // alias(libs.plugins.binary.compatibility.validator)
 
     // Code coverage (opt-in, Kover). Uncomment to add koverHtmlReport /
@@ -51,11 +56,16 @@ kotlin {
 }
 
 dependencies {
+    // Coroutines are part of the public API (suspend verbs, Flow streaming), so
+    // they are an `api` dependency — consumers compile against them.
+    api(libs.kotlinx.coroutines.core)
+
     // kotlin("test") routes to the JUnit Platform (Jupiter) backend because
     // junit-jupiter is on the test classpath and `useJUnitPlatform()` is set.
     testImplementation(kotlin("test"))
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
+    testImplementation(libs.kotlinx.coroutines.test)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 

@@ -163,9 +163,10 @@ Use the Gradle **wrapper** (`./gradlew`, `gradlew.bat`) — never a system
 
 ¹ **Opt-in, off by default.** Kover and the Binary Compatibility Validator are
 commented out in `build.gradle.kts`; their tasks (`koverHtmlReport`, `apiDump`,
-`apiCheck`) exist only once you uncomment the plugin alias. Enable the BCV in
-step 1 — run `apiDump` once to seed `api/`, after which `build` also runs
-`apiCheck`.
+`apiCheck`) exist only once you uncomment the plugin alias. The BCV is **deferred**:
+the frozen standalone plugin's ASM cannot read Java 25 bytecode, and the
+KGP-native replacement is experimental — re-enable once one supports JVM 25. Until
+then the public API is tracked via the CHANGELOG and review.
 
 The build is **warnings-as-errors** (`allWarningsAsErrors = true`) and runs
 ktlint as part of `check`/`build`. Fix a warning/lint violation rather than
