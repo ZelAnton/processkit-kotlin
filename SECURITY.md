@@ -27,9 +27,11 @@ ready, a patched release is published to Maven Central and the advisory is discl
 
 ## Automated scanning
 
-This repository runs [GitHub CodeQL](.github/workflows/codeql.yml)
-(`security-and-quality` suite, `java-kotlin` pack) on every pull request, every
-push to `main`, and weekly. [Dependabot](.github/dependabot.yml) keeps Gradle
+This repository ships a [GitHub CodeQL](.github/workflows/codeql.yml)
+(`security-and-quality` suite, `java-kotlin` pack) workflow, currently
+**manual-only**: CodeQL's Kotlin extractor cannot yet analyse Kotlin 2.4 (required
+for JVM 25), so the push/PR/weekly triggers are paused until support ships.
+[Dependabot](.github/dependabot.yml) keeps Gradle
 dependencies and Actions current, and the
 [dependency-submission workflow](.github/workflows/dependency-submission.yml)
 reports the resolved Gradle dependency graph so security alerts also cover

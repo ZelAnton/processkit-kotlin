@@ -1,12 +1,11 @@
 name: CodeQL
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  schedule:
-    - cron: '32 5 * * 1'
+  # Paused on push/PR/schedule: CodeQL's Kotlin extractor (CLI 2.25.6) hits an
+  # internal compiler error on Kotlin 2.4.x, which this project requires for JVM
+  # 25 bytecode (2.3 is the floor; downgrading is not an option). Re-enable the
+  # push / pull_request / schedule triggers once CodeQL ships Kotlin 2.4 support.
+  workflow_dispatch:
 
 concurrency:
   group: codeql-${{ github.ref }}
