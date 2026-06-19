@@ -154,6 +154,7 @@ Use the Gradle **wrapper** (`./gradlew`, `gradlew.bat`) — never a system
 | Full build (compile + test + lint) | `./gradlew build` |
 | Tests only | `./gradlew test` |
 | One test | `./gradlew test --tests "net.zelanton.processkit.CommandTest"` |
+| Tests on Linux (Docker) | `bash scripts/test-docker.sh` (or `pwsh ./scripts/test-docker.ps1`) |
 | Lint | `./gradlew ktlintCheck` |
 | Auto-format | `./gradlew ktlintFormat` |
 | Coverage (Kover) ¹ | `./gradlew koverHtmlReport` |
@@ -169,6 +170,17 @@ step 1 — run `apiDump` once to seed `api/`, after which `build` also runs
 The build is **warnings-as-errors** (`allWarningsAsErrors = true`) and runs
 ktlint as part of `check`/`build`. Fix a warning/lint violation rather than
 suppressing it; reserve `@Suppress` for cases with a written justification.
+
+**Cross-platform tests (mandatory).** The containment backend is
+platform-specific, so the suite must pass on **both** hosts: the Windows/JVM host
+(`./gradlew test` — the Job Object path) **and** Linux
+(`bash scripts/test-docker.sh` — the cgroup v2 / POSIX process-group paths, run in a
+JDK 25 container via Docker / Rancher Desktop; no Linux box needed). The image
+COPYs the source (no bind mounts), so there are no Windows↔Linux path clashes. CI
+runs the full Linux/Windows/macOS matrix; the Docker script is the local Linux
+leg. Real-subprocess / kill-on-close tests are tagged so each platform can opt
+in; later cgroup/limits tests may need `DOCKER_RUN_ARGS="--privileged
+--cgroupns=host"`.
 
 ## Toolchain
 

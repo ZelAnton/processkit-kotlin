@@ -27,6 +27,21 @@ with:
 ./gradlew test --tests "net.zelanton.processkit.GreeterTest"
 ```
 
+### Tests on Linux (Docker)
+
+The containment backends are platform-specific: the Windows/JVM host (and
+`./gradlew test`) covers the **Job Object** path, while the **cgroup v2 / POSIX
+process-group** paths only run on Linux. Run the suite in a Linux container — no
+Linux machine needed, works with Docker / Rancher Desktop:
+
+```sh
+bash scripts/test-docker.sh        # or: pwsh ./scripts/test-docker.ps1
+bash scripts/test-docker.sh test   # tests only; extra args pass through to Gradle
+```
+
+The image copies the source (no bind mounts) and runs JDK 25. CI already runs the
+full Linux/Windows/macOS matrix; this is the local equivalent of the Linux leg.
+
 ## Conventions
 
 - **Formatting** is governed by [`.editorconfig`](.editorconfig) and ktlint —
