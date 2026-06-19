@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Run every step under bash, including on windows-latest. The default Windows
+# shell is pwsh, which cannot execute the extensionless `./gradlew` launcher;
+# Git Bash (present on GitHub's Windows runners) runs it on all three OSes.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  yaml-lint:
+    runs-on: ubuntu-latest
+    steps:
+      # Actions are pinned to a full commit SHA (supply-chain hardening); the
+      # trailing comment records the human-readable version. Dependabot bumps the
+      # SHA and updates the comment on its weekly run.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.x'
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      # Config is .yamllint.yml — tuned for Actions YAML. Real defects (tabs,
+      # duplicate keys, bad indentation) fail; cosmetic line-length stays a
+      # non-failing warning.
+      - name: Lint YAML
+        run: yamllint .
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # Actions are pinned to a full commit SHA (supply-chain hardening); the
+      # trailing comment records the human-readable version. Dependabot bumps the
+      # SHA and updates the comment on its weekly run.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
+
+      - name: Build (compile + test + ktlint)
+        run: ./gradlew build --stacktrace

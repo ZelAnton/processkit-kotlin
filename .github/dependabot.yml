@@ -1,0 +1,31 @@
+version: 2
+
+# Keep GitHub Actions and Gradle dependencies current. The gradle ecosystem
+# reads versions from gradle/libs.versions.toml (the version catalog); the
+# github-actions ecosystem bumps the action tags pinned in .github/workflows/*.yml.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: CI
+    groups:
+      # One PR per weekly run for all action bumps, instead of one PR per action.
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: Update
+    groups:
+      gradle-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

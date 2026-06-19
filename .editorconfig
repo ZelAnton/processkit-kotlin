@@ -1,0 +1,45 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Kotlin and Kotlin-script — 4-space indent (Kotlin official style). This is the
+# F#-style exception to the .NET templates' tabs-everywhere rule: Kotlin's
+# official style and ktlint both use spaces. ktlint reads the keys below.
+[*.{kt,kts}]
+indent_style = space
+indent_size = 4
+max_line_length = 120
+# ktlint rule style: `ktlint_official` — the stricter upstream Kotlin style is
+# this project's standard. (`intellij_idea` is the laxer IDE-default alternative.)
+ktlint_code_style = ktlint_official
+# Mandatory KDoc on every public declaration is too opinionated for a general
+# template — enable it per-project if you want enforced docs.
+ktlint_standard_kdoc = disabled
+
+# Windows batch files (gradlew.bat) need CRLF — cmd.exe won't parse them otherwise.
+[*.{bat,cmd}]
+end_of_line = crlf
+indent_style = space
+indent_size = 2
+
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+[*.{toml,json}]
+indent_style = space
+indent_size = 2
+
+[*.{ps1,psm1,psd1}]
+indent_style = space
+indent_size = 4
+
+# Markdown uses trailing whitespace for hard line breaks — don't strip it.
+[*.md]
+trim_trailing_whitespace = false

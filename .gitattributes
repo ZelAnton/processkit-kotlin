@@ -1,0 +1,35 @@
+# Default: normalize line endings to LF in the repository. Keeps git and the
+# colocated `jj` agreeing on the working copy, especially on Windows.
+* text=auto eol=lf
+
+# Kotlin / Kotlin-script and Gradle files are LF.
+*.kt   text eol=lf
+*.kts  text eol=lf
+
+# The Gradle wrapper: the POSIX launcher must stay LF; the Windows launcher must
+# be CRLF or cmd.exe won't parse it. The CRLF files are stored *verbatim* (-text)
+# rather than normalized to LF-in-repo: the colocated `jj` does not apply
+# gitattributes EOL filters, so a git-normalized .bat (LF blob, CRLF worktree)
+# shows as perpetually modified to git while jj sees it clean. Verbatim storage
+# keeps both tools agreeing; `diff` preserves textual (not binary) diffs.
+gradlew      text eol=lf
+*.bat        -text diff
+*.cmd        -text diff
+
+# The wrapper jar is binary — never touch it.
+gradle-wrapper.jar binary
+
+# PowerShell scripts work with both, but keep LF consistent with the repo default.
+*.ps1  text eol=lf
+*.psm1 text eol=lf
+*.psd1 text eol=lf
+
+# Shell scripts must always be LF — required for execution on Unix.
+*.sh   text eol=lf
+
+# Binary assets — never touch.
+*.jar  binary
+*.png  binary
+*.jpg  binary
+*.gif  binary
+*.ico  binary

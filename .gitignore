@@ -1,0 +1,61 @@
+## -------
+## Gradle / build output
+## -------
+.gradle/
+build/
+# Keep the committed Gradle wrapper jar even if a global ~/.gitignore excludes
+# *.jar — it must ship with the repo so `./gradlew` works on a fresh clone.
+!gradle/wrapper/gradle-wrapper.jar
+
+## -------
+## Release pipeline scratch
+## -------
+release-notes.md
+
+## -------
+## IntelliJ IDEA / Android Studio
+## -------
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+## -------
+## Eclipse / VS Code
+## -------
+.classpath
+.project
+.settings/
+bin/
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+*.code-workspace
+
+## -------
+## Kotlin / JVM
+## -------
+*.class
+*.hprof
+.kotlin/
+
+## -------
+## macOS / Windows cruft
+## -------
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+## -------
+## Secrets / local config
+## -------
+.env
+.env.local
+
+## -------
+## Claude Code — agent config is local to each checkout; never pushed (each
+## contributor brings their own, matching the family convention; see AGENTS.md).
+## -------
+.claude/
