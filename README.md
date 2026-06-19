@@ -11,8 +11,38 @@ A **native** sibling in the [`processkit`](https://github.com/ZelAnton/ProcessKi
 family (Rust · Go · C# · Python · F# · Kotlin) — its own JVM backend, not a
 binding. The Rust crate is the reference; this port mirrors its behaviour.
 
-> **Status:** planning. See [ROADMAP.md](ROADMAP.md) for the design, the
-> spawn-control de-risk plan, and the gated, feature-by-feature port sequence.
+> **Status: early development.** Run-and-capture (`Command` + the capture verbs)
+> works today on **Windows** and **Linux**; the rest of the surface — streaming,
+> pipelines, readiness probes, supervision, resource limits — is landing
+> incrementally, and macOS support is on the way. Track progress in
+> [ROADMAP.md](ROADMAP.md).
+
+## Quick start
+
+```kotlin
+import net.zelanton.processkit.Command
+
+suspend fun main() {
+    // Capture the result; a non-zero exit is data, not an exception.
+    val head = Command("git", "rev-parse", "HEAD").outputString()
+    println("${head.stdout.trim()}  (exit ${head.exitCode})")
+
+    // Require success and get trimmed stdout directly.
+    println(Command("git", "--version").run())
+}
+```
+
+Every run is contained in its own kill-on-close tree, so a timeout or a dropped
+coroutine never leaks the process — or anything it spawned. Inject a
+`ProcessRunner` (e.g. `ScriptedRunner`) to unit-test code that shells out with no
+subprocess.
+
+## Requirements
+
+**JDK 25+.** processkit binds platform APIs through the Foreign Function & Memory
+API, so run with `--enable-native-access=ALL-UNNAMED`. Supported today:
+**Windows** (Job Object) and **Linux** (cgroup v2 / process group); macOS is
+planned.
 
 ## Building & testing
 

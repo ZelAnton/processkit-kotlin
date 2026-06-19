@@ -335,6 +335,10 @@ Effort in parentheses. The **lean-core / 0.1** boundary is marked.
    *Gate:* capture a command into a typed result; non-zero exit is data, not an
    exception; coroutine cancel kills the tree; orphan-leak test green on every
    mechanism.
+   ✅ **Done (2026-06-20)** on Windows + Linux (`Command`, the capture verbs,
+   `ProcessResult`, open `ProcessException`, `ProcessRunner`/`JobRunner`/
+   `ScriptedRunner`, captured timeout, structured-concurrency cancellation).
+   `Outcome` and the macOS backend are deferred to where they are first needed.
 
 2. **ProcessGroup container** *(M)* — explicit shared kill-on-close group:
    `ProcessGroup() : AutoCloseable` / `close()` / `start()`; graceful
