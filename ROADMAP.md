@@ -347,6 +347,11 @@ Effort in parentheses. The **lean-core / 0.1** boundary is marked.
    batch.
    *Gate:* several children in one group; `use { }` / `close()` reaps the whole
    tree (grandchildren included); graceful shutdown verified on Unix.
+   ✅ **Done (2026-06-20)** on Windows + Linux (`ProcessGroup` as a
+   `ProcessRunner` + `AutoCloseable`, `mechanism`, `close()`, graceful
+   `shutdown()`, and concurrency-capped `outputAll` / `outputAllBytes`).
+   `start()` / `waitAny` / `waitAll` moved to step 3, where they ride the live
+   `RunningProcess` handle.
 
 3. **Streaming & interactive I/O** *(M)* — `RunningProcess`: `stdoutLines():
    Flow<String>`, background stderr drain, interactive stdin, `onStdoutLine` /
