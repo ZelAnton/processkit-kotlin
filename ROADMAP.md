@@ -287,6 +287,13 @@ surface, but **incrementally and deliberately**:
 
 ## Phase 0 — De-risk spikes  *(prerequisite, blocking)*
 
+> ✅ **Done (2026-06-19).** An internal `Containment` seam proves spawn +
+> whole-tree kill-on-close on **Windows** (Job Object via FFM `kernel32`) and
+> **Linux** (process group via a `setsid` launcher + FFM `kill`); a containment
+> test reaps a child→grandchild tree on both, run natively on Windows and in
+> Docker on Linux. Race-free `CREATE_SUSPENDED` / `posix_spawn` / cgroup and
+> macOS land in step 1 (the decision-gate fallback was not needed — FFM works).
+
 The risky unknowns are about *spawning*, not an async bridge. Throwaway
 experiments (folded into `sys/` or deleted after the phase).
 

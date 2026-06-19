@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
--
+- `Mechanism` — the kernel containment primitive reported for a process tree
+  (`JOB_OBJECT` / `CGROUP_V2` / `PROCESS_GROUP` / `NONE`).
 
 ### Changed
 -

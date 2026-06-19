@@ -61,6 +61,10 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // processkit binds platform APIs (Job Object / libc) through the Foreign
+    // Function & Memory API; grant native access so the JVM doesn't warn (and,
+    // on a future JDK, doesn't refuse). Consumers pass the same flag.
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
 // ---------------------------------------------------------------------------

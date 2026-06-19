@@ -153,7 +153,7 @@ Use the Gradle **wrapper** (`./gradlew`, `gradlew.bat`) — never a system
 |---|---|
 | Full build (compile + test + lint) | `./gradlew build` |
 | Tests only | `./gradlew test` |
-| One test | `./gradlew test --tests "net.zelanton.processkit.CommandTest"` |
+| One test | `./gradlew test --tests "net.zelanton.processkit.ContainmentTest"` |
 | Tests on Linux (Docker) | `bash scripts/test-docker.sh` (or `pwsh ./scripts/test-docker.ps1`) |
 | Lint | `./gradlew ktlintCheck` |
 | Auto-format | `./gradlew ktlintFormat` |

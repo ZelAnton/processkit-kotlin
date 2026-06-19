@@ -29,6 +29,8 @@ echo "==> Building test image '$IMAGE' with $ENGINE"
 "$ENGINE" build -t "$IMAGE" .
 
 echo "==> Running: ./gradlew $* (in $IMAGE)"
+# --init: a PID-1 reaper (tini) so orphaned grandchildren in the process-tree
+# tests are reaped, not left as zombies (which would read as still-alive).
 # shellcheck disable=SC2086  # DOCKER_RUN_ARGS is an intentional word-split list.
-exec "$ENGINE" run --rm ${DOCKER_RUN_ARGS:-} "$IMAGE" \
+exec "$ENGINE" run --rm --init ${DOCKER_RUN_ARGS:-} "$IMAGE" \
     ./gradlew "$@" --no-daemon --console=plain

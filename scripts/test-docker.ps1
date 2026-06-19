@@ -39,5 +39,7 @@ Write-Host "==> Building test image '$image' with $engine" -ForegroundColor Cyan
 if ($LASTEXITCODE -ne 0) { throw "image build failed (exit $LASTEXITCODE)" }
 
 Write-Host "==> Running: ./gradlew $($GradleArgs -join ' ') (in $image)" -ForegroundColor Cyan
-& $engine run --rm @runArgs $image ./gradlew @GradleArgs --no-daemon --console=plain
+# --init: a PID-1 reaper (tini) so orphaned grandchildren in the process-tree
+# tests are reaped, not left as zombies (which would read as still-alive).
+& $engine run --rm --init @runArgs $image ./gradlew @GradleArgs --no-daemon --console=plain
 exit $LASTEXITCODE

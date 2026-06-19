@@ -24,7 +24,7 @@ clean local build is required before opening a pull request. Run a single test
 with:
 
 ```sh
-./gradlew test --tests "net.zelanton.processkit.GreeterTest"
+./gradlew test --tests "net.zelanton.processkit.ContainmentTest"
 ```
 
 ### Tests on Linux (Docker)
