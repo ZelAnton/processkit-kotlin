@@ -67,6 +67,20 @@ tasks.test {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
+// Supply-chain hygiene: ktlint 1.5.0 pulls logback 1.3.14 (CVE-2024-12798 /
+// CVE-2024-12801). Force the patched 1.3.x onto ktlint's own classpath only —
+// logback is a build-tool dependency, never on the library's compile/runtime
+// classpath and never shipped in the published artifact. Remove this once a
+// ktlint release brings a patched logback.
+configurations.matching { it.name.startsWith("ktlint") }.configureEach {
+    resolutionStrategy {
+        force(
+            "ch.qos.logback:logback-classic:1.3.15",
+            "ch.qos.logback:logback-core:1.3.15",
+        )
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Publishing — Maven Central via the Sonatype Central Portal.
 //

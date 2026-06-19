@@ -237,10 +237,13 @@ manual entries win.
 
 ## Security scanning
 
-GitHub **CodeQL** supports Kotlin (`java-kotlin`); a `codeql.yml` ships with the
-template — treat new alerts like build warnings. Keep Dependabot and the
-dependency-submission workflow so alerts cover transitive deps. (Native/FFM code
-is outside CodeQL's reach — cover it with the leak/stress tests instead.)
+GitHub **CodeQL** (`java-kotlin`) ships in `codeql.yml` but is **paused on
+push/PR/schedule** (manual-only): its Kotlin extractor ICEs on Kotlin 2.4.x,
+which we require for JVM 25. Re-enable the triggers once CodeQL supports 2.4
+(and drop the note in `codeql.yml` / `SECURITY.md`). **Dependabot** (alerts +
+the dependency-graph submission workflow) covers dependency vulnerabilities,
+including transitive ones. Treat new alerts like build warnings. (Native/FFM
+code is outside CodeQL's reach anyway — cover it with leak/stress tests.)
 
 ## Version control workflow
 
