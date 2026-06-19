@@ -40,6 +40,16 @@ public class ProcessGroup :
     }
 
     /**
+     * Start [command] in this group and return a live [RunningProcess] for
+     * streaming. The handle's `close()` kills only this child's subtree; the
+     * group's own [close] reaps the whole tree.
+     */
+    public suspend fun start(command: Command): RunningProcess {
+        val process = withContext(Dispatchers.IO) { containment.spawnChecked(command) }
+        return RunningProcess(process, containment, ownsContainer = false, command.timeoutOrNull)
+    }
+
+    /**
      * Graceful teardown: ask the tree to stop (SIGTERM on Unix), wait up to
      * [grace], then hard-kill whatever remains. On Windows there is no graceful
      * signal, so this is an immediate atomic kill.

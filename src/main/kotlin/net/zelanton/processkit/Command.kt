@@ -1,5 +1,7 @@
 package net.zelanton.processkit
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.nio.file.Path
 import kotlin.time.Duration
 
@@ -90,6 +92,24 @@ public class Command(
 
     /** A yes/no probe: exit `0` → `true`, `1` → `false`, anything else throws. */
     public suspend fun probe(): Boolean = JobRunner.probe(this)
+
+    /**
+     * Start the command and return a live [RunningProcess] for streaming. The
+     * run lives in its own kill-on-close container; `use { }` the handle so a
+     * dropped or cancelled run reaps the tree.
+     */
+    public suspend fun start(): RunningProcess {
+        val command = this
+        val containment = newContainment(program)
+        val process =
+            try {
+                withContext(Dispatchers.IO) { containment.spawnChecked(command) }
+            } catch (failure: Throwable) {
+                containment.close()
+                throw failure
+            }
+        return RunningProcess(process, containment, ownsContainer = true, timeoutOrNull)
+    }
 
     override fun toString(): String = "Command(${commandLine.joinToString(" ")})"
 }

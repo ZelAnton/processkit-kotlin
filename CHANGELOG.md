@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `RunningProcess` (via `Command.start()` / `ProcessGroup.start()`) — a live
+  handle for streaming: `stdoutLines(): Flow<String>`, background stderr capture,
+  a `timeout` watchdog that bounds the stream, and `finish(): Finished`. It is
+  `AutoCloseable`; `use { }` reaps the tree on a dropped or cancelled run.
+- `Finished` — the outcome of a streamed run (`exitCode`, `stderr`, `timedOut`,
+  `isSuccess`).
 - `ProcessGroup` — a shared kill-on-close container (and a `ProcessRunner`): run
   several children through it and `close()` reaps the whole tree, grandchildren
   included; `shutdown()` adds a graceful SIGTERM→grace→SIGKILL tier on Unix;
