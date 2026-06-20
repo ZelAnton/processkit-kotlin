@@ -415,9 +415,11 @@ Effort in parentheses. The **lean-core / 0.1** boundary is marked.
 10. **stats** *(M)* — group stats **done (10a)**: `ProcessGroupStats` +
     `ProcessGroup.stats()` (Job Object accounting on Windows; live-group count on
     the process-group backend, CPU/memory `null`) + `sampleStats(): Flow`.
-    *Deferred to 10b:* per-run `RunProfile` / `RunningProcess.{cpuTime,
-    peakMemoryBytes, profile}` (per-process `/proc` parsing + `GetProcessTimes` /
-    memory FFM).
+    **10b done:** per-run `RunProfile` / `RunningProcess.{cpuTime, peakMemoryBytes,
+    profile}` — per-process metrics via `/proc/<pid>/{stat,status}` on Linux and
+    `GetProcessTimes` / `K32GetProcessMemoryInfo` (FFM) on Windows; `profile(every)`
+    samples both while running and returns a `RunProfile` (+ `avgCpu()`); `null`
+    where unavailable (macOS, process-group backend, scripted handle).
 11. **limits** *(M)* — **done (11a)**: `ResourceLimits(memoryMax / maxProcesses /
     cpuQuota)` via `ProcessGroup(limits)`; the Windows Job Object enforces
     `memoryMax` + `maxProcesses`; an unenforceable cap (process-group backend, or

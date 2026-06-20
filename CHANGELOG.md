@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Per-run profiling: `RunningProcess.cpuTime` / `peakMemoryBytes` report the started
+  child's CPU time (user + kernel) and peak resident memory, and
+  `RunningProcess.profile(every): RunProfile` runs the child to completion while
+  sampling both — returning exit code, wall-clock duration, peak memory (max across
+  samples), CPU time (last sample), sample count, and an `avgCpu()` (cores). Backed
+  by `/proc/<pid>/{stat,status}` on Linux and `GetProcessTimes` /
+  `K32GetProcessMemoryInfo` on Windows; `null` where unavailable (macOS, the
+  process-group backend, a scripted handle).
 - Windows process-control parity: `ProcessGroup.suspend()` / `resume()` now work on
   Windows (no more `Unsupported`) by suspending/resuming every thread of every
   member process (a system-wide thread snapshot, filtered to the Job Object's pids),

@@ -7,16 +7,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.future.await
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import net.zelanton.processkit.internal.Containment
+import net.zelanton.processkit.internal.processMetrics
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -25,6 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.nanoseconds
 
 /**
  * A live handle on a started child — stream its output, then collect the outcome.
@@ -108,6 +112,20 @@ public class RunningProcess internal constructor(
 
     /** Whether the child is still running. */
     public val isAlive: Boolean get() = process.isAlive
+
+    /**
+     * Cumulative CPU time (user + kernel) the child has consumed so far, or `null`
+     * where per-process metrics are unavailable (macOS, the process-group backend,
+     * a scripted handle, or an exited child). Reads `/proc/<pid>/stat` on Linux and
+     * `GetProcessTimes` on Windows.
+     */
+    public val cpuTime: Duration? get() = if (pid <= 0L) null else processMetrics(pid).cpuTime
+
+    /**
+     * The child's peak resident memory in bytes (the working-set high-water mark on
+     * Windows, `VmHWM` on Linux), or `null` where unavailable (see [cpuTime]).
+     */
+    public val peakMemoryBytes: Long? get() = if (pid <= 0L) null else processMetrics(pid).peakMemoryBytes
 
     /**
      * Take the interactive stdin writer — non-null only if the command was built
@@ -231,6 +249,48 @@ public class RunningProcess internal constructor(
             }
         }
         return finishResult.await()
+    }
+
+    /**
+     * Run the child to completion while sampling CPU and memory every [every],
+     * returning a [RunProfile]. Behaves like [finish] — output is drained and
+     * discarded and a [Command.timeout] applies — but reports peak resident memory
+     * (the max across samples), CPU time (the last sample), and the sample count. A
+     * sub-millisecond [every] is clamped to 1 ms. `cpuTime`/`peakMemoryBytes` are
+     * `null` where per-process metrics are unavailable (see [cpuTime]).
+     *
+     * [RunProfile.exitCode] is `null` for a run killed by its [Command.timeout]; a
+     * signal-killed child reports `128 + signal` (the JVM convention, mirroring
+     * [Finished]). Like [finish] this does not release the handle — still [close]
+     * it (use `use { }`) to reap the tree.
+     */
+    public suspend fun profile(every: Duration): RunProfile {
+        val tick = every.coerceAtLeast(1.milliseconds)
+        val startNanos = System.nanoTime()
+        var cpu: Duration? = null
+        var peak: Long? = null
+        var samples = 0
+        val sampler =
+            scope.launch {
+                while (isActive) {
+                    delay(tick)
+                    val metrics = processMetrics(pid)
+                    samples++
+                    metrics.cpuTime?.let { cpu = it }
+                    metrics.peakMemoryBytes?.let { value -> peak = maxOf(peak ?: 0L, value) }
+                }
+            }
+        // finish() drains+waits+applies the timeout, then cancels scope (stopping the
+        // sampler); cancelAndJoin makes the sampler's writes visible before we read.
+        val finished =
+            try {
+                finish()
+            } finally {
+                sampler.cancelAndJoin()
+            }
+        val duration = (System.nanoTime() - startNanos).nanoseconds
+        val exitCode = if (finished.timedOut) null else finished.exitCode
+        return RunProfile(exitCode, duration, cpu, peak, samples)
     }
 
     /**

@@ -16,6 +16,7 @@ import java.lang.foreign.ValueLayout
 import java.lang.invoke.MethodHandle
 import java.lang.invoke.VarHandle
 import java.nio.file.Path
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.nanoseconds
 
 /** The host operating system, detected once. */
@@ -420,6 +421,21 @@ internal object Libc {
         pid: Long,
         signal: Int,
     ): Int = killHandle.invoke(pid.toInt(), signal) as Int
+
+    // _SC_CLK_TCK on Linux (the clock-tick rate /proc/<pid>/stat times are in).
+    private const val SC_CLK_TCK: Int = 2
+
+    private val sysconfHandle: MethodHandle =
+        linker.downcallHandle(
+            linker
+                .defaultLookup()
+                .find("sysconf")
+                .orElseThrow { UnsatisfiedLinkError("libc!sysconf not found") },
+            FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT),
+        )
+
+    /** Clock ticks per second (`sysconf(_SC_CLK_TCK)`) — the unit of `/proc` CPU times. */
+    internal fun clockTicksPerSecond(): Long = sysconfHandle.invoke(SC_CLK_TCK) as Long
 }
 
 /** Minimal kernel32 (Win32 Job Object) bindings. */
@@ -851,6 +867,85 @@ internal object Win32 {
 
     internal fun closeHandle(handle: MemorySegment) {
         closeHandleFn.invoke(handle) as Int
+    }
+
+    // --- per-run metrics (10b): per-process CPU time + peak working set ---
+
+    private const val PROCESS_QUERY_LIMITED_INFORMATION: Int = 0x1000
+
+    // PROCESS_MEMORY_COUNTERS (x64): cb(4) + PageFaultCount(4) + 8 × SIZE_T(8) = 72;
+    // PeakWorkingSetSize is the first SIZE_T, at offset 8.
+    private const val PROCESS_MEMORY_COUNTERS_SIZE: Int = 72
+    private const val PEAK_WORKING_SET_OFFSET: Long = 8
+
+    private val getProcessTimes =
+        bind(
+            "GetProcessTimes",
+            FunctionDescriptor.of(
+                ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS,
+                ValueLayout.ADDRESS,
+                ValueLayout.ADDRESS,
+                ValueLayout.ADDRESS,
+                ValueLayout.ADDRESS,
+            ),
+        )
+    private val getProcessMemoryInfo =
+        bind(
+            "K32GetProcessMemoryInfo",
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT),
+        )
+
+    /** Per-process CPU time and peak working set for [pid] (either `null` if unreadable). */
+    internal fun processMetrics(pid: Long): ProcessMetrics {
+        val handle = openProcess.invoke(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid.toInt()) as MemorySegment
+        if (handle.address() == 0L) return ProcessMetrics.EMPTY // process gone / not openable
+        try {
+            return Arena.ofConfined().use { arena ->
+                ProcessMetrics(
+                    cpuTime = readCpuTime(handle, arena),
+                    peakMemoryBytes = readPeakWorkingSet(handle, arena),
+                )
+            }
+        } finally {
+            runCatching { closeHandleFn.invoke(handle) as Int }
+        }
+    }
+
+    // GetProcessTimes writes 4 × FILETIME (creation, exit, kernel, user) of 8 bytes
+    // each. FILETIME is little-endian {low DWORD, high DWORD}, so reading the 8 bytes
+    // as a JAVA_LONG yields the 100-ns count directly. CPU = kernel + user.
+    private fun readCpuTime(
+        handle: MemorySegment,
+        arena: Arena,
+    ): Duration? {
+        val times = arena.allocate(8L * 4)
+        val ok =
+            getProcessTimes.invoke(
+                handle,
+                times,
+                times.asSlice(8),
+                times.asSlice(16),
+                times.asSlice(24),
+            ) as Int
+        if (ok == 0) return null
+        val kernel100ns = times.get(ValueLayout.JAVA_LONG, 16)
+        val user100ns = times.get(ValueLayout.JAVA_LONG, 24)
+        val total100ns = kernel100ns + user100ns
+        // Each unit is 100 ns; clamp the ×100 so a pathological value can't overflow.
+        val nanos = if (total100ns > Long.MAX_VALUE / 100) Long.MAX_VALUE else total100ns * 100
+        return nanos.nanoseconds
+    }
+
+    private fun readPeakWorkingSet(
+        handle: MemorySegment,
+        arena: Arena,
+    ): Long? {
+        val counters = arena.allocate(PROCESS_MEMORY_COUNTERS_SIZE.toLong())
+        counters.set(ValueLayout.JAVA_INT, 0, PROCESS_MEMORY_COUNTERS_SIZE) // cb
+        val ok = getProcessMemoryInfo.invoke(handle, counters, PROCESS_MEMORY_COUNTERS_SIZE) as Int
+        if (ok == 0) return null
+        return counters.get(ValueLayout.JAVA_LONG, PEAK_WORKING_SET_OFFSET)
     }
 
     private fun throwLastError(call: String): Nothing {
