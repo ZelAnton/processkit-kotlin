@@ -42,7 +42,9 @@ public class CliClient(
     private val runner: ProcessRunner = JobRunner,
 ) {
     private var defaultTimeout: Duration? = null
-    private val defaultEnvironment: LinkedHashMap<String, String> = LinkedHashMap()
+
+    // Value `null` means "remove" (see [defaultEnvRemove]); a non-null value sets it.
+    private val defaultEnvironment: LinkedHashMap<String, String?> = LinkedHashMap()
 
     /** Apply a default timeout to every command this client builds. */
     public fun defaultTimeout(timeout: Duration): CliClient = apply { defaultTimeout = timeout }
@@ -59,6 +61,13 @@ public class CliClient(
 
     /** Set several default environment variables (see [defaultEnv]). */
     public fun defaultEnv(entries: Map<String, String>): CliClient = apply { defaultEnvironment.putAll(entries) }
+
+    /**
+     * Remove an inherited environment variable on every command this client builds
+     * (the [Command.envRemove] default). A per-command [Command.env] /
+     * [Command.envRemove] for the same key wins.
+     */
+    public fun defaultEnvRemove(name: String): CliClient = apply { defaultEnvironment[name] = null }
 
     /** A [Command] for `program <args>`, the client defaults pre-applied. */
     public fun command(vararg args: String): Command = fillDefaults(Command(program, *args))
@@ -91,7 +100,7 @@ public class CliClient(
         }
         for ((name, value) in defaultEnvironment) {
             if (name !in command.environmentOverrides) {
-                command.env(name, value)
+                if (value == null) command.envRemove(name) else command.env(name, value)
             }
         }
         return command

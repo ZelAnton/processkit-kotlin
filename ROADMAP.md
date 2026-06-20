@@ -394,9 +394,11 @@ Effort in parentheses. The **lean-core / 0.1** boundary is marked.
    `Unsupported`); `ScriptedRunner.start` streams a scripted `RunningProcess`
    (via a fake `ScriptedProcess`) through the real machinery; `onSequence`
    (fail-then-succeed); `firstLine` on `ProcessRunner`/`Command`/`CliClient`.
-   *Deferred to 8c:* scripted-stream timing refinements (line-delay pacing,
-   pending-until-cancel) and `Command.envRemove` / `CliClient.defaultEnvRemove`
-   (single-var env removal — its own small env-model change).
+   **8c done:** scripted-stream timing — `Reply.pending()` (parks until cancelled;
+   a `Command.timeout` surfaces it as timed-out, `start` is reaped by the watchdog /
+   `close`) and `Reply.withLineDelay()` (paces a scripted `start` stream line by
+   line); plus `Command.envRemove` / `CliClient.defaultEnvRemove` (env overrides
+   are now an ordered set-or-remove list).
 
 **— Rust feature flags, mapped to Kotlin (each always-compiled, runtime/DI-gated) —**
 

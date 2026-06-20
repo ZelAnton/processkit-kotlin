@@ -1,6 +1,7 @@
 package net.zelanton.processkit
 
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -48,7 +49,9 @@ class StreamingSeamTest {
 
     @Test
     fun `scripted waitForLine matches a canned banner`() =
-        runTest {
+        // runBlocking (real clock): waitForLine's stdout reader runs on Dispatchers.IO,
+        // which a runTest virtual clock would race by advancing straight to the deadline.
+        runBlocking {
             val runner = ScriptedRunner().fallback(Reply.ok("starting\nREADY\n"))
             runner.start(Command("svc")).use { run ->
                 assertTrue(run.waitForLine(5.seconds) { it.contains("READY") }.contains("READY"))

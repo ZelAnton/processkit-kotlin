@@ -20,8 +20,8 @@ public class Invocation internal constructor(
     public val args: List<String>,
     /** The working directory, if one was set. */
     public val workingDir: Path?,
-    /** Environment overrides applied to the command, in registration order. */
-    public val environment: Map<String, String>,
+    /** Environment overrides applied to the command, in registration order (a `null` value is a removal). */
+    public val environment: Map<String, String?>,
     /** Whether a non-empty stdin source was supplied. */
     public val hasStdin: Boolean,
 ) {

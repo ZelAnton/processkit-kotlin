@@ -31,7 +31,10 @@ public class Command(
     public constructor(program: String, args: List<String>) : this(program, *args.toTypedArray())
 
     private val argumentList: MutableList<String> = args.toMutableList()
-    private val environment: LinkedHashMap<String, String> = LinkedHashMap()
+
+    // Value `null` means "remove this inherited variable" (see [envRemove]); a
+    // non-null value sets it. Insertion order is preserved (LinkedHashMap).
+    private val environment: LinkedHashMap<String, String?> = LinkedHashMap()
 
     internal var workingDirectory: Path? = null
         private set
@@ -65,7 +68,7 @@ public class Command(
             add(program)
             addAll(argumentList)
         }
-    internal val environmentOverrides: Map<String, String> get() = environment
+    internal val environmentOverrides: Map<String, String?> get() = environment
 
     /** Append a single argument. */
     public fun arg(value: String): Command = apply { argumentList.add(value) }
@@ -87,6 +90,13 @@ public class Command(
 
     /** Set several environment variables for the child. */
     public fun env(entries: Map<String, String>): Command = apply { environment.putAll(entries) }
+
+    /**
+     * Remove an environment variable the child would otherwise inherit from the
+     * parent. A later [env] for the same name re-sets it (and vice versa) — the
+     * last call wins. No-op against [clearEnv] (nothing is inherited to remove).
+     */
+    public fun envRemove(name: String): Command = apply { environment[name] = null }
 
     /**
      * Start from an empty environment (only the variables set via [env] are

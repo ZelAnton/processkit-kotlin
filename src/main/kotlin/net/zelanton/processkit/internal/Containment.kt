@@ -52,7 +52,7 @@ internal interface Containment : AutoCloseable {
     fun spawn(
         command: List<String>,
         workingDir: Path? = null,
-        environment: Map<String, String> = emptyMap(),
+        environment: Map<String, String?> = emptyMap(),
         clearEnvironment: Boolean = false,
     ): Process
 
@@ -107,7 +107,7 @@ internal interface Containment : AutoCloseable {
 internal fun newProcessBuilder(
     command: List<String>,
     workingDir: Path?,
-    environment: Map<String, String>,
+    environment: Map<String, String?>,
     clearEnvironment: Boolean,
 ): ProcessBuilder {
     val builder = ProcessBuilder(command)
@@ -119,7 +119,7 @@ internal fun newProcessBuilder(
         env.clear()
     }
     for ((name, value) in environment) {
-        env[name] = value
+        if (value == null) env.remove(name) else env[name] = value
     }
     return builder
 }
@@ -161,7 +161,7 @@ internal class PosixGroupContainment(
     override fun spawn(
         command: List<String>,
         workingDir: Path?,
-        environment: Map<String, String>,
+        environment: Map<String, String?>,
         clearEnvironment: Boolean,
     ): Process {
         // `setsid` runs the target in a fresh session/group; working dir and env
@@ -289,7 +289,7 @@ internal class WindowsJobContainment(
     override fun spawn(
         command: List<String>,
         workingDir: Path?,
-        environment: Map<String, String>,
+        environment: Map<String, String?>,
         clearEnvironment: Boolean,
     ): Process {
         // ProcessBuilder gives no race-free assignment hook, so the child is

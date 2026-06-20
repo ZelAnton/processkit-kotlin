@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Environment removal: `Command.envRemove(name)` drops a variable the child would
+  otherwise inherit, and `CliClient.defaultEnvRemove(name)` makes it a client-wide
+  default; a per-command `env` / `envRemove` for the same key wins. Env overrides
+  are now an ordered set-or-remove list (the last op for a key wins).
+- Scripted-stream timing on `Reply`: `Reply.pending()` parks a run until it is
+  cancelled — a `Command.timeout` surfaces it as timed-out, and on `start` the
+  watchdog / `close` reaps it — the hermetic mirror of a hung long-runner for
+  cancellation/timeout tests; `Reply.withLineDelay(d)` paces a scripted `start`
+  stream line by line so a streaming test observes incremental delivery (the bulk
+  verbs ignore it).
 - Output buffer policy: `Command.outputBuffer(OutputBufferPolicy)` caps how much
   captured output the bulk verbs retain — `bounded(n)` (ring buffer, drop oldest),
   `failLoud(n)` (error past the ceiling), `withMaxBytes` / `withOverflow`

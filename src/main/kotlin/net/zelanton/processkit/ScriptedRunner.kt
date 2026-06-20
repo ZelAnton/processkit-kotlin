@@ -1,6 +1,9 @@
 package net.zelanton.processkit
 
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration
 
 /**
  * A [ProcessRunner] that serves canned replies — the hermetic test double.
@@ -19,8 +22,9 @@ import java.util.concurrent.atomic.AtomicInteger
  *     .fallback(Reply.fail(1, "unknown command"))
  * ```
  *
- * A scripted handle models a **finite** stream (the canned output is delivered in
- * full); timing-paced and never-exiting scripted streams are not modelled.
+ * A scripted handle delivers its canned output in full (instant by default), or —
+ * via the [Reply] — paced line by line ([Reply.withLineDelay]) or never-exiting
+ * until killed ([Reply.pending], for cancellation/timeout tests).
  */
 public class ScriptedRunner : ProcessRunner {
     private val rules = mutableListOf<Rule>()
@@ -72,6 +76,7 @@ public class ScriptedRunner : ProcessRunner {
 
     override suspend fun execute(command: Command): ProcessResult<ByteArray> {
         val reply = matchedReply(command)
+        if (reply.pending) return pendingResult(command)
         // Fire the command's line handlers / tees over the canned output, so
         // progress-reporting code tests hermetically (matching the live pump).
         replayLineHandlers(command, reply.stdout, reply.stderr.encodeToByteArray())
@@ -84,9 +89,25 @@ public class ScriptedRunner : ProcessRunner {
         )
     }
 
+    // A pending reply parks the bulk call like a hung child: a [Command.timeout]
+    // surfaces as a timed-out capture (the watchdog's bulk equivalent); otherwise
+    // it waits for coroutine cancellation (which kills a real child's tree).
+    private suspend fun pendingResult(command: Command): ProcessResult<ByteArray> {
+        val timeout = command.timeoutOrNull ?: run { awaitCancellation() }
+        withTimeoutOrNull(timeout) { awaitCancellation() }
+        return ProcessResult(command.program, ByteArray(0), "", TIMED_OUT_EXIT, timedOut = true)
+    }
+
     override suspend fun start(command: Command): RunningProcess {
         val reply = matchedReply(command)
-        val process = ScriptedProcess(reply.stdout, reply.stderr.encodeToByteArray(), reply.exitCode)
+        val process =
+            ScriptedProcess(
+                reply.stdout,
+                reply.stderr.encodeToByteArray(),
+                reply.exitCode,
+                reply.lineDelay,
+                reply.pending,
+            )
         return RunningProcess(
             process,
             command.program,
@@ -123,13 +144,30 @@ public class ScriptedRunner : ProcessRunner {
     }
 }
 
+/** Exit code reported for a killed/timed-out scripted run (Unix SIGKILL convention). */
+internal const val TIMED_OUT_EXIT: Int = 137
+
 /** A canned reply for [ScriptedRunner]. Construct via the [Reply.Companion] factories. */
 public class Reply private constructor(
     internal val stdout: ByteArray,
     internal val stderr: String,
     internal val exitCode: Int,
     internal val timedOut: Boolean,
+    internal val pending: Boolean = false,
+    internal val lineDelay: Duration = Duration.ZERO,
 ) {
+    /**
+     * Pace a scripted [start][ScriptedRunner.start]: release each stdout/stderr
+     * line after [delay], so a hermetic streaming test observes genuinely
+     * incremental delivery. The handle "exits" once the longer stream has drained;
+     * a [Command.timeout] shorter than that total kills it mid-stream. The bulk
+     * verbs ([ScriptedRunner.execute] and friends) ignore the delay.
+     */
+    public fun withLineDelay(delay: Duration): Reply {
+        require(delay >= Duration.ZERO) { "line delay must be >= 0, was $delay" }
+        return Reply(stdout, stderr, exitCode, timedOut, pending, delay)
+    }
+
     public companion object {
         /** A clean exit (code 0) with [stdout] as text. */
         public fun ok(stdout: String = ""): Reply = Reply(stdout.encodeToByteArray(), "", 0, false)
@@ -144,6 +182,17 @@ public class Reply private constructor(
         ): Reply = Reply(ByteArray(0), stderr, exitCode, false)
 
         /** A run that hit its deadline (tree killed). */
-        public fun timedOut(stdout: String = ""): Reply = Reply(stdout.encodeToByteArray(), "", 137, true)
+        public fun timedOut(stdout: String = ""): Reply = Reply(stdout.encodeToByteArray(), "", TIMED_OUT_EXIT, true)
+
+        /**
+         * A run that never finishes on its own — it parks until the call is
+         * cancelled. In the bulk verbs the call waits for coroutine cancellation
+         * (a [Command.timeout] surfaces it as a timed-out capture); on
+         * [start][ScriptedRunner.start] the handle stays alive until the timeout
+         * watchdog or [close][RunningProcess.close] kills it. The hermetic mirror
+         * of a hung long-runner, for testing that an orchestration cancels (and
+         * cleans up), not just that it formats a canned error.
+         */
+        public fun pending(): Reply = Reply(ByteArray(0), "", TIMED_OUT_EXIT, false, pending = true)
     }
 }
