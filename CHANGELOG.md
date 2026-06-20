@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Windows process-control parity: `ProcessGroup.suspend()` / `resume()` now work on
+  Windows (no more `Unsupported`) by suspending/resuming every thread of every
+  member process (a system-wide thread snapshot, filtered to the Job Object's pids),
+  and `ProcessGroup.members()` is now kernel-authoritative on Windows
+  (`QueryInformationJobObject(JobObjectBasicProcessIdList)`) rather than an estimate
+  from the spawned roots' live descendants.
 - Environment removal: `Command.envRemove(name)` drops a variable the child would
   otherwise inherit, and `CliClient.defaultEnvRemove(name)` makes it a client-wide
   default; a per-command `env` / `envRemove` for the same key wins. Env overrides

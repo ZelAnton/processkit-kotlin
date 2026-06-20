@@ -27,6 +27,15 @@ class ProcessControlTest {
             Command("sh", "-c", "sleep 30")
         }
 
+    // A child that exits on its own in ~1s — used to prove a frozen child does NOT
+    // exit on schedule, then runs to completion once resumed.
+    private fun shortLived(): Command =
+        if (Os.current == Os.WINDOWS) {
+            Command("cmd", "/c", "ping -n 2 127.0.0.1 >nul")
+        } else {
+            Command("sh", "-c", "sleep 1")
+        }
+
     private fun awaitDead(
         pid: Long,
         timeoutMillis: Long = 5_000,
@@ -49,6 +58,28 @@ class ProcessControlTest {
                     val members = group.members()
                     assertTrue(run.pid in members, "the child pid should be a group member; members=$members")
                 }
+            }
+        }
+
+    @Test
+    fun `members is kernel-authoritative and includes a grandchild on Windows`() =
+        runBlocking {
+            assumeWindows()
+            // cmd.exe spawns ping.exe; the Job Object's pid list reports both, where
+            // the old roots-plus-descendants estimate could miss a re-parented grandchild.
+            ProcessGroup().use { group ->
+                val run = group.start(longRunning())
+                val members =
+                    withTimeoutOrNull(5.seconds) {
+                        var snapshot = group.members()
+                        while (snapshot.size < 2) {
+                            delay(100)
+                            snapshot = group.members()
+                        }
+                        snapshot
+                    }.orEmpty()
+                assertTrue(run.pid in members, "the cmd root should be a member; members=$members")
+                assertTrue(members.size >= 2, "the ping grandchild should also be a member; members=$members")
             }
         }
 
@@ -79,26 +110,15 @@ class ProcessControlTest {
     @Test
     fun `suspend freezes a child until resume`() =
         runBlocking {
-            assumeUnix()
+            assumeSupported()
             ProcessGroup().use { group ->
-                val run = group.start(Command("sh", "-c", "sleep 1"))
+                val run = group.start(shortLived())
                 delay(100)
                 group.suspend()
-                delay(1_500) // well past the 1s sleep: a frozen child must not have exited
+                delay(2_000) // well past the ~1s natural runtime: a frozen child must not have exited
                 assertTrue(run.isAlive, "a suspended child must not exit while frozen")
                 group.resume()
                 assertTrue(withTimeoutOrNull(5.seconds) { run.waitFor() } != null, "a resumed child runs to completion")
-            }
-        }
-
-    @Test
-    fun `suspend is unsupported on Windows`() =
-        runBlocking {
-            assumeWindows()
-            ProcessGroup().use { group ->
-                group.start(longRunning()).use {
-                    assertFailsWith<ProcessException.Unsupported> { group.suspend() }
-                }
             }
         }
 

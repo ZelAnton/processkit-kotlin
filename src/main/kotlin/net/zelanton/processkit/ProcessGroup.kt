@@ -95,10 +95,12 @@ public class ProcessGroup(
 
     /**
      * Suspend (freeze) every process in the group — `SIGSTOP` to each group on
-     * Unix. **Windows is not yet supported** and throws
-     * [ProcessException.Unsupported] (per-thread suspend lands in a later
-     * increment). A suspended tree can still be hard-killed ([close]); a graceful
-     * [shutdown] cannot make progress until the tree is [resume]d first.
+     * Unix; on Windows, every thread of every member process is suspended (Windows
+     * has no process-level freeze). Best-effort and not atomic: a process or thread
+     * created mid-call may be missed. A suspended tree can still be hard-killed
+     * ([close]); a graceful [shutdown] cannot make progress until the tree is
+     * [resume]d first. Each [suspend] needs a matching [resume] (Windows tracks a
+     * per-thread suspend count).
      */
     public fun suspend() {
         log.debug("group: suspend ({})", containment.mechanism)
@@ -117,8 +119,12 @@ public class ProcessGroup(
      * after, and a process spawned during the call may be missing.
      *
      * On Unix this is the tracked group leaders plus any [adopt]ed child (one pid
-     * each; descendants are contained but not enumerated). On Windows it is each
-     * spawned/adopted root that is still alive plus its live descendants.
+     * each; descendants are contained but not enumerated). On Windows it is
+     * kernel-authoritative — every pid the Job Object reports in the tree.
+     *
+     * [members], [suspend], and [resume] require an open group: they throw
+     * `IllegalStateException` after [close] (unlike [signal]/[close], which are
+     * idempotent no-ops once closed).
      */
     public fun members(): List<Long> = containment.members()
 

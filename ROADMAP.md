@@ -407,8 +407,11 @@ Effort in parentheses. The **lean-core / 0.1** boundary is marked.
    where a platform can't deliver). Unix: any signal, `SIGSTOP`/`SIGCONT`
    suspend/resume, members = group leaders + adopted. Windows: `signal(Kill)`,
    `adopt` (Job assignment), members = spawned roots + live descendants.
-   *Deferred to 9b:* Windows `suspend`/`resume` (per-thread enumeration) and
-   kernel-authoritative Windows `members` (`QueryInformationJobObject`).
+   **9b done:** Windows `suspend`/`resume` via per-thread enumeration (a
+   `CreateToolhelp32Snapshot` thread walk, Suspend/ResumeThread-ing every thread
+   owned by a member pid) and kernel-authoritative Windows `members`
+   (`QueryInformationJobObject(JobObjectBasicProcessIdList)`); `GetLastError`
+   captured per call via `Linker.Option.captureCallState`.
 10. **stats** *(M)* — group stats **done (10a)**: `ProcessGroupStats` +
     `ProcessGroup.stats()` (Job Object accounting on Windows; live-group count on
     the process-group backend, CPU/memory `null`) + `sampleStats(): Flow`.

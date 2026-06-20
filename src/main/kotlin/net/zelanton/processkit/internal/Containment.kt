@@ -14,6 +14,7 @@ import java.lang.foreign.MemorySegment
 import java.lang.foreign.SymbolLookup
 import java.lang.foreign.ValueLayout
 import java.lang.invoke.MethodHandle
+import java.lang.invoke.VarHandle
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.nanoseconds
 
@@ -282,10 +283,6 @@ internal class WindowsJobContainment(
     private val lock = Any()
     private var closed = false
 
-    // Pids we assigned to the job — the roots of the contained tree, used to
-    // enumerate [members] via their live descendants.
-    private val spawnedPids = mutableListOf<Long>()
-
     override fun spawn(
         command: List<String>,
         workingDir: Path?,
@@ -295,6 +292,11 @@ internal class WindowsJobContainment(
         // ProcessBuilder gives no race-free assignment hook, so the child is
         // assigned immediately after start. The residual window (a child that
         // forks before assignment) is closed by CREATE_SUSPENDED in a later step.
+        // NOTE for that step: once spawn creates a child CREATE_SUSPENDED and then
+        // resumes it, spawn MUST serialize its assign→resume under `lock` (the way
+        // [suspendAll]/[resumeAll] hold it), or a concurrent suspend walk landing in
+        // that window would double-suspend the new child's primary thread and the
+        // single spawn-resume would strand it suspended forever.
         val process = newProcessBuilder(command, workingDir, environment, clearEnvironment).start()
         try {
             Win32.assignToJob(job, process.pid())
@@ -304,7 +306,6 @@ internal class WindowsJobContainment(
             process.destroyForcibly()
             throw failure
         }
-        synchronized(lock) { spawnedPids.add(process.pid()) }
         return process
     }
 
@@ -328,31 +329,29 @@ internal class WindowsJobContainment(
         }
     }
 
-    // Suspending a Job Object means suspending every thread of every member; the
-    // thread-enumeration backend lands in a later increment.
-    override fun suspendAll(): Unit = throw ProcessException.Unsupported("suspend")
-
-    override fun resumeAll(): Unit = throw ProcessException.Unsupported("resume")
-
-    override fun members(): List<Long> {
-        val roots = synchronized(lock) { spawnedPids.toList() }
-        val live = LinkedHashSet<Long>()
-        val dead = mutableListOf<Long>()
-        for (pid in roots) {
-            val handle = ProcessHandle.of(pid).orElse(null)
-            if (handle != null && handle.isAlive) {
-                live.add(pid)
-                handle.descendants().forEach { live.add(it.pid()) }
-            } else {
-                dead.add(pid)
-            }
+    // Suspend/resume the whole tree by walking a thread snapshot and Suspend/
+    // ResumeThread-ing every thread owned by a member pid (Windows has no
+    // process-level freeze). Held under the lock so close() can't free the job
+    // handle mid-walk.
+    override fun suspendAll(): Unit =
+        synchronized(lock) {
+            check(!closed) { "process group is closed" }
+            Win32.suspendOrResumeMembers(job, suspend = true)
         }
-        // Drop roots that have exited so the tracking list stays bounded.
-        if (dead.isNotEmpty()) {
-            synchronized(lock) { spawnedPids.removeAll(dead.toSet()) }
+
+    override fun resumeAll(): Unit =
+        synchronized(lock) {
+            check(!closed) { "process group is closed" }
+            Win32.suspendOrResumeMembers(job, suspend = false)
         }
-        return live.toList()
-    }
+
+    // Kernel-authoritative: the pids the Job Object itself reports (whole tree),
+    // not an approximation from the spawned roots' live descendants.
+    override fun members(): List<Long> =
+        synchronized(lock) {
+            check(!closed) { "process group is closed" }
+            Win32.jobMemberPids(job)
+        }
 
     override fun adopt(pid: Long) {
         synchronized(lock) {
@@ -360,7 +359,6 @@ internal class WindowsJobContainment(
             // concurrent close() must not race assignment into a recycled handle.
             check(!closed) { "process group is closed" }
             Win32.assignToJob(job, pid)
-            spawnedPids.add(pid)
         }
     }
 
@@ -650,6 +648,202 @@ internal object Win32 {
                 throwLastError("QueryInformationJobObject(extended)")
             }
             info.get(ValueLayout.JAVA_LONG, peakJobMemoryUsedOffset)
+        }
+
+    // --- process-control (9b): per-thread suspend/resume + kernel-authoritative members ---
+
+    private const val TH32CS_SNAPTHREAD: Int = 0x00000004
+    private const val THREAD_SUSPEND_RESUME: Int = 0x0002
+    private const val JOB_OBJECT_BASIC_PROCESS_ID_LIST_CLASS: Int = 3
+    private const val ERROR_MORE_DATA: Int = 234
+    private const val ERROR_INVALID_PARAMETER: Int = 87
+    private const val INVALID_HANDLE_VALUE: Long = -1L
+    private const val SUSPEND_RESUME_FAILED: Int = -1 // (DWORD)-1 from Suspend/ResumeThread
+
+    // Capture GetLastError per call (the bound function's last-error is otherwise
+    // racy across intervening calls — see throwLastError). A captured downcall
+    // gains a leading MemorySegment param that receives the state.
+    private val captureStateLayout: MemoryLayout = Linker.Option.captureStateLayout()
+    private val captureCallState: Linker.Option = Linker.Option.captureCallState("GetLastError")
+    private val getLastErrorVar: VarHandle =
+        captureStateLayout.varHandle(MemoryLayout.PathElement.groupElement("GetLastError"))
+
+    private fun bindCapturing(
+        name: String,
+        descriptor: FunctionDescriptor,
+    ): MethodHandle =
+        linker.downcallHandle(
+            k32.find(name).orElseThrow { UnsatisfiedLinkError("kernel32!$name not found") },
+            descriptor,
+            captureCallState,
+        )
+
+    private fun lastError(capture: MemorySegment): Int = getLastErrorVar.get(capture, 0L) as Int
+
+    // THREADENTRY32 (all DWORD/LONG, so 7 × 4 bytes, no padding).
+    private val threadEntryLayout: MemoryLayout =
+        MemoryLayout.structLayout(
+            ValueLayout.JAVA_INT.withName("dwSize"),
+            ValueLayout.JAVA_INT.withName("cntUsage"),
+            ValueLayout.JAVA_INT.withName("th32ThreadID"),
+            ValueLayout.JAVA_INT.withName("th32OwnerProcessID"),
+            ValueLayout.JAVA_INT.withName("tpBasePri"),
+            ValueLayout.JAVA_INT.withName("tpDeltaPri"),
+            ValueLayout.JAVA_INT.withName("dwFlags"),
+        )
+    private val th32ThreadIDOffset: Long =
+        threadEntryLayout.byteOffset(MemoryLayout.PathElement.groupElement("th32ThreadID"))
+    private val th32OwnerProcessIDOffset: Long =
+        threadEntryLayout.byteOffset(MemoryLayout.PathElement.groupElement("th32OwnerProcessID"))
+
+    private val createToolhelp32Snapshot =
+        bindCapturing(
+            "CreateToolhelp32Snapshot",
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT),
+        )
+    private val thread32First =
+        bind("Thread32First", FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS))
+    private val thread32Next =
+        bind("Thread32Next", FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS))
+    private val openThread =
+        bindCapturing(
+            "OpenThread",
+            FunctionDescriptor.of(
+                ValueLayout.ADDRESS,
+                ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT,
+            ),
+        )
+    private val suspendThread =
+        bindCapturing("SuspendThread", FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS))
+    private val resumeThread =
+        bindCapturing("ResumeThread", FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS))
+    private val queryInformationJobObjectCapturing =
+        bindCapturing(
+            "QueryInformationJobObject",
+            FunctionDescriptor.of(
+                ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS,
+                ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS,
+                ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS,
+            ),
+        )
+
+    /**
+     * The pids currently assigned to [job] — kernel-authoritative, via
+     * `QueryInformationJobObject(JobObjectBasicProcessIdList)`. The list is a
+     * variable-length struct (two-`DWORD` header + an inline `ULONG_PTR` array),
+     * so query into an 8-byte-aligned buffer and grow on `ERROR_MORE_DATA`.
+     */
+    internal fun jobMemberPids(job: MemorySegment): List<Long> {
+        var cap = 64
+        while (true) {
+            val bytes = 8L + cap.toLong() * 8L // header (2 × DWORD) + cap × ULONG_PTR
+            val pids =
+                Arena.ofConfined().use { arena ->
+                    val buf = arena.allocate(bytes, 8)
+                    val capture = arena.allocate(captureStateLayout)
+                    val ok =
+                        queryInformationJobObjectCapturing.invoke(
+                            capture,
+                            job,
+                            JOB_OBJECT_BASIC_PROCESS_ID_LIST_CLASS,
+                            buf,
+                            bytes.toInt(),
+                            MemorySegment.NULL,
+                        ) as Int
+                    if (ok != 0) {
+                        val n = buf.get(ValueLayout.JAVA_INT, 4L) // NumberOfProcessIdsInList
+                        ArrayList<Long>(n).apply {
+                            for (i in 0 until n) add(buf.get(ValueLayout.JAVA_LONG, 8L + i.toLong() * 8L))
+                        }
+                    } else {
+                        val err = lastError(capture)
+                        if (err != ERROR_MORE_DATA) {
+                            throw IOException("QueryInformationJobObject(pidList) failed (GetLastError=$err)")
+                        }
+                        val assigned = buf.get(ValueLayout.JAVA_INT, 0L) // NumberOfAssignedProcesses
+                        cap = maxOf(assigned, cap) * 2 // always grow so the loop can't spin in place
+                        null
+                    }
+                }
+            if (pids != null) return pids
+        }
+    }
+
+    /**
+     * Suspend or resume every thread of every process currently in [job] — Windows
+     * has no process-level freeze, so walk a system-wide thread snapshot and
+     * Suspend/ResumeThread each thread owned by a member pid. Best-effort, not
+     * atomic: threads created mid-walk are missed, and the calls keep per-thread
+     * suspend *counts* (a suspend needs a matching resume). A thread that exits
+     * mid-walk is vacuously handled; a genuine failure is raised after the walk.
+     */
+    internal fun suspendOrResumeMembers(
+        job: MemorySegment,
+        suspend: Boolean,
+    ) {
+        val members = jobMemberPids(job).toHashSet()
+        if (members.isEmpty()) return // an empty job is trivially suspended/resumed
+        Arena.ofConfined().use { arena ->
+            val capture = arena.allocate(captureStateLayout)
+            val snapshot = createToolhelp32Snapshot.invoke(capture, TH32CS_SNAPTHREAD, 0) as MemorySegment
+            if (snapshot.address() == INVALID_HANDLE_VALUE) {
+                throw IOException("CreateToolhelp32Snapshot failed (GetLastError=${lastError(capture)})")
+            }
+            try {
+                val entry = arena.allocate(threadEntryLayout)
+                entry.set(ValueLayout.JAVA_INT, 0L, threadEntryLayout.byteSize().toInt()) // dwSize
+                var firstError: IOException? = null
+                var ok = thread32First.invoke(snapshot, entry) as Int
+                while (ok != 0) {
+                    val owner = entry.get(ValueLayout.JAVA_INT, th32OwnerProcessIDOffset).toLong() and 0xFFFFFFFFL
+                    if (owner in members) {
+                        val tid = entry.get(ValueLayout.JAVA_INT, th32ThreadIDOffset).toLong() and 0xFFFFFFFFL
+                        try {
+                            suspendOrResumeThread(tid, suspend)
+                        } catch (failure: IOException) {
+                            if (firstError == null) firstError = failure
+                        }
+                    }
+                    ok = thread32Next.invoke(snapshot, entry) as Int
+                }
+                firstError?.let { throw it }
+            } finally {
+                closeHandleFn.invoke(snapshot) as Int
+            }
+        }
+    }
+
+    // Suspend (increment) or resume (decrement) a single thread's suspend count.
+    private fun suspendOrResumeThread(
+        tid: Long,
+        suspend: Boolean,
+    ): Unit =
+        Arena.ofConfined().use { arena ->
+            val capture = arena.allocate(captureStateLayout)
+            val thread = openThread.invoke(capture, THREAD_SUSPEND_RESUME, 0, tid.toInt()) as MemorySegment
+            if (thread.address() == 0L) {
+                val err = lastError(capture)
+                // A stale tid (thread exited between the snapshot and this open) fails
+                // ERROR_INVALID_PARAMETER and is vacuously handled; any other failure
+                // (e.g. ACCESS_DENIED on a live thread) is genuine and reported.
+                if (err == ERROR_INVALID_PARAMETER) return@use
+                throw IOException("OpenThread(tid=$tid) failed (GetLastError=$err)")
+            }
+            try {
+                val capture2 = arena.allocate(captureStateLayout)
+                val prev = (if (suspend) suspendThread else resumeThread).invoke(capture2, thread) as Int
+                if (prev == SUSPEND_RESUME_FAILED) {
+                    val verb = if (suspend) "SuspendThread" else "ResumeThread"
+                    throw IOException("$verb(tid=$tid) failed (GetLastError=${lastError(capture2)})")
+                }
+            } finally {
+                closeHandleFn.invoke(thread) as Int
+            }
         }
 
     internal fun terminateJob(job: MemorySegment) {
