@@ -27,22 +27,27 @@ public enum class OverflowMode {
  * retain in memory, line by line. The pump still drains the OS pipe (so the child
  * never blocks); this only bounds the in-memory backlog.
  *
- * Two independent ceilings — [maxLines] and [maxBytes] (the sum of retained lines'
- * bytes) — either or both may be set. On overflow, [overflow] decides whether to
- * drop the oldest/newest line or fail loud. When lines are dropped the result is
- * flagged [ProcessResult.truncated]; the success-checking verbs (`run` / `parse`)
- * reject a truncated capture (they present stdout as complete).
+ * Two independent ceilings — [maxLines] and [maxBytes] (the retained output size,
+ * counting the `\n` separators between lines) — either or both may be set. On
+ * overflow, [overflow] decides whether to drop the oldest/newest line or fail
+ * loud. When lines are dropped the result is flagged [ProcessResult.truncated];
+ * the success-checking verbs (`run` / `parse`) reject a truncated capture (they
+ * present stdout as complete).
  *
- * Applies to the bulk capture path; a streamed run ([RunningProcess.stdoutLines] /
- * [RunningProcess.outputEvents]) is bounded by the consumer instead, and a
- * [pipeline][Command.pipe] does not honor it (its stages capture unbounded). The
- * byte cap bounds *retained* memory, not a single never-terminated line still
- * being assembled — pair with [Command.timeout] to bound a pathological flood.
+ * Applies to the **bulk capture** path (`run` / `outputString` / `outputBytes`):
+ * because that path retains whole lines, `outputBytes` under a bounded policy
+ * returns the retained lines re-joined with `\n` (CRLF normalized) rather than
+ * verbatim bytes — for byte-exact output leave the policy unbounded (the default).
+ * A streamed run ([RunningProcess.stdoutLines] / [RunningProcess.outputEvents]) is
+ * bounded by the consumer's back-pressure instead, and a [pipeline][Command.pipe]
+ * does not honor it (its stages capture unbounded). The byte cap bounds *retained*
+ * memory, not a single never-terminated line still being assembled — pair with
+ * [Command.timeout] to bound a pathological flood.
  */
 public class OutputBufferPolicy private constructor(
     /** Max retained lines: `null` unbounded, `0` retains nothing, `n` keeps at most `n`. */
     public val maxLines: Int?,
-    /** Max retained bytes (sum of retained lines' byte lengths): `null` unbounded. */
+    /** Max retained output size in bytes (content + `\n` separators): `null` unbounded. */
     public val maxBytes: Int?,
     /** Which line to drop (or whether to error) when full. */
     public val overflow: OverflowMode,

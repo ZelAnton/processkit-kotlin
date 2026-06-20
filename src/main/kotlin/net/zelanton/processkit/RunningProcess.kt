@@ -22,6 +22,7 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.charset.Charset
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -35,8 +36,9 @@ import kotlin.time.Duration.Companion.milliseconds
  * }
  * ```
  *
- * stderr is drained in the background by the first consuming verb ([stdoutLines] /
- * [waitForLine] / [waitFor] / [finish]), or carried by [outputEvents]; a
+ * stderr is drained in the background by the first awaiting/streaming verb
+ * ([stdoutLines] / [waitForLine] / [waitFor] / [waitForPort] / [waitUntil] /
+ * [finish]), or carried by [outputEvents]; a
  * [Command.timeout] is enforced by a watchdog that bounds the stream. Always
  * [close] the handle (use `use { }`): on a dropped or cancelled run that is what
  * reaps the tree.
@@ -65,10 +67,11 @@ public class RunningProcess internal constructor(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val stdoutConsumed = AtomicBoolean(false)
 
-    // stderr is drained lazily by the first consuming verb (stdoutLines / finish /
-    // waitFor[Line]); outputEvents reads it directly instead and sets stderrConsumed
-    // so the byte drain is never also started against the same stream.
-    private val stderrConsumed = AtomicBoolean(false)
+    // stderr has exactly one consumer, decided by a single atomic: the background
+    // byte drain (started lazily by the first awaiting/streaming verb) OR
+    // outputEvents reading it line by line. Whichever claims it first wins; the
+    // other path then skips stderr, so the stream is never read twice.
+    private val stderrConsumer = AtomicReference(StderrConsumer.UNCLAIMED)
     private val stderrBytes: Deferred<ByteArray> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         scope.async { process.errorStream.readBytes() }
     }
@@ -150,11 +153,24 @@ public class RunningProcess internal constructor(
      * streams interleaved in arrival order. Lines are decoded with the command's
      * encodings. Consumes both streams (it is mutually exclusive with [stdoutLines],
      * and afterwards [finish] reports an empty stderr — the events carried it).
+     *
+     * Collect inside `use { }`. Cancelling the collector early (e.g. `take(n)`, a
+     * `withTimeout`, or a throwing collector) cancels the reader coroutines, but a
+     * blocking pipe read does not unblock until the child writes more, exits, or the
+     * handle is [close]d — so always [close] the handle to reap a partially-consumed
+     * stream. Like [stdoutLines], a single consumer is assumed: don't [finish] (or
+     * collect again) while another coroutine is still collecting.
      */
     public fun outputEvents(): Flow<OutputEvent> =
         channelFlow {
+            // Claim stderr first: if the byte drain already started (e.g. after a
+            // waitFor/readiness probe), fail loud rather than reading the stream
+            // twice. Every stdout consumer also claims stderr, so a lost stderr race
+            // here always trips before the stdout claim — stdout stays free.
+            check(stderrConsumer.compareAndSet(StderrConsumer.UNCLAIMED, StderrConsumer.EVENTS)) {
+                "stderr has already been consumed"
+            }
             check(stdoutConsumed.compareAndSet(false, true)) { "stdout has already been consumed" }
-            stderrConsumed.set(true) // events own stderr; the byte drain must not also read it
             val stdoutReader =
                 launch {
                     process.inputStream.bufferedReader(stdoutCharset).use { reader ->
@@ -200,7 +216,11 @@ public class RunningProcess internal constructor(
                 drain?.await()
                 // outputEvents already delivered stderr; otherwise drain the bytes.
                 val stderr =
-                    if (stderrConsumed.get()) "" else String(stderrBytes.await(), stderrCharset).normalizeNewlines()
+                    if (stderrConsumer.get() == StderrConsumer.EVENTS) {
+                        ""
+                    } else {
+                        String(stderrBytes.await(), stderrCharset).normalizeNewlines()
+                    }
                 finishResult.complete(Finished(process.exitValue(), stderr, timedOut))
             } catch (failure: Throwable) {
                 killTree()
@@ -239,10 +259,13 @@ public class RunningProcess internal constructor(
     }
 
     // Start the background stderr byte-drain (so a chatty stderr can't block the
-    // child) unless outputEvents is reading stderr itself. Touching the lazy starts
-    // it; .start() makes this an unambiguous statement and is a no-op if running.
+    // child) unless outputEvents already claimed stderr. The CAS makes the first
+    // caller the byte-drain owner and starts it exactly once; later callers (and the
+    // outputEvents path) see the claim and skip, so the stream is never read twice.
     private fun startStderrDrain() {
-        if (!stderrConsumed.get()) stderrBytes.start()
+        if (stderrConsumer.compareAndSet(StderrConsumer.UNCLAIMED, StderrConsumer.BYTES)) {
+            stderrBytes.start()
+        }
     }
 
     /**
@@ -301,6 +324,7 @@ public class RunningProcess internal constructor(
         address: InetSocketAddress,
         timeout: Duration,
     ) {
+        startStderrDrain() // a chatty server's stderr must not fill the pipe while we poll
         val ready =
             withTimeoutOrNull(timeout) {
                 while (!canConnect(address)) {
@@ -321,6 +345,7 @@ public class RunningProcess internal constructor(
         timeout: Duration,
         check: suspend () -> Boolean,
     ) {
+        startStderrDrain() // a chatty child's stderr must not fill the pipe while we poll
         val ready =
             withTimeoutOrNull(timeout) {
                 while (!check()) {
@@ -370,3 +395,6 @@ public class RunningProcess internal constructor(
         private val CONNECT_TIMEOUT = 250.milliseconds
     }
 }
+
+/** Which path owns stderr: nobody yet, the background byte drain, or [RunningProcess.outputEvents]. */
+private enum class StderrConsumer { UNCLAIMED, BYTES, EVENTS }

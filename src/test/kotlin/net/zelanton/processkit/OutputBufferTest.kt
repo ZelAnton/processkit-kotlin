@@ -54,10 +54,19 @@ class OutputBufferTest {
 
     @Test
     fun `dropNewest with a byte cap keeps lines greedily, not a strict prefix`() {
-        // maxBytes=4: aaa(3) fits; bbb(3) would overflow and is skipped; c(1) still fits.
-        val policy = OutputBufferPolicy.unbounded().withMaxBytes(4).withOverflow(OverflowMode.DROP_NEWEST)
+        // maxBytes=5: aaa(3) fits; bbb(3) (+sep) would overflow and is skipped; c(1) (+sep) still fits.
+        val policy = OutputBufferPolicy.unbounded().withMaxBytes(5).withOverflow(OverflowMode.DROP_NEWEST)
         val result = pump("aaa\nbbb\nc\n", policy)
         assertEquals("aaa\nc", String(result.bytes))
+        assertTrue(result.truncated)
+    }
+
+    @Test
+    fun `a byte cap bounds an empty-line flood`() {
+        // Empty lines carry no content; the separators must still be counted, or the
+        // retained chunk list would grow without limit under a byte-only cap.
+        val result = pump("\n".repeat(1000), OutputBufferPolicy.unbounded().withMaxBytes(4))
+        assertTrue(result.bytes.size <= 4, "empty-line flood must stay within the byte cap")
         assertTrue(result.truncated)
     }
 

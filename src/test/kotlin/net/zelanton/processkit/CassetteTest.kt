@@ -122,6 +122,21 @@ class CassetteTest {
         }
 
     @Test
+    fun `replay preserves the truncated flag`() =
+        runTest {
+            val file = tempCassette()
+            val inner =
+                object : ProcessRunner {
+                    override suspend fun execute(command: Command): ProcessResult<ByteArray> =
+                        ProcessResult("seq", "1\n2\n".encodeToByteArray(), "", 0, timedOut = false, truncated = true)
+                }
+            RecordReplayRunner.record(file, inner).use { it.outputString(Command("seq")) }
+
+            val replayed = RecordReplayRunner.replay(file).outputString(Command("seq"))
+            assertTrue(replayed.truncated, "truncated must survive the cassette round-trip")
+        }
+
+    @Test
     fun `base64 round-trips binary stdout exactly`() =
         runTest {
             val file = tempCassette()

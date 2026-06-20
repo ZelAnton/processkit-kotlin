@@ -79,6 +79,10 @@ private class LineRetention(
     private val policy: OutputBufferPolicy,
 ) {
     private val chunks = ArrayDeque<ByteArray>()
+
+    // The exact size [bytes] would emit: the sum of retained content plus one `\n`
+    // separator between each pair of lines. Counting the separators means even
+    // empty lines cost a byte, so a `\n`-flood under a byte-only cap stays bounded.
     private var bytes = 0
     var truncated = false
         private set
@@ -92,7 +96,9 @@ private class LineRetention(
             OverflowMode.DROP_OLDEST -> {
                 retain(content)
                 while (overCap()) {
-                    bytes -= chunks.removeFirst().size
+                    val evicted = chunks.removeFirst()
+                    bytes -= evicted.size
+                    if (chunks.isNotEmpty()) bytes -= 1 // the separator that followed it
                     truncated = true
                 }
             }
@@ -109,6 +115,7 @@ private class LineRetention(
     }
 
     private fun retain(content: ByteArray) {
+        if (chunks.isNotEmpty()) bytes += 1 // the `\n` separator joining it to the previous line
         chunks.addLast(content)
         bytes += content.size
     }
@@ -118,7 +125,10 @@ private class LineRetention(
     private fun exceedsIfAdded(len: Int): Boolean {
         if (policy.maxLines == null && policy.maxBytes == null) return true
         if (policy.maxLines != null && chunks.size + 1 > policy.maxLines) return true
-        if (policy.maxBytes != null && bytes + len > policy.maxBytes) return true
+        if (policy.maxBytes != null) {
+            val separator = if (chunks.isEmpty()) 0 else 1
+            if (bytes + separator + len > policy.maxBytes) return true
+        }
         return false
     }
 

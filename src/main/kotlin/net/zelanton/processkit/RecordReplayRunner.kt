@@ -51,6 +51,7 @@ private data class Entry(
     val stderr: String,
     val exitCode: Int? = null,
     val timedOut: Boolean = false,
+    val truncated: Boolean = false,
 )
 
 /** The match key of a live command or a stored entry (both built the same way). */
@@ -236,6 +237,7 @@ private fun entryOf(
         stderr = result.stderr,
         exitCode = if (result.timedOut) null else result.exitCode,
         timedOut = result.timedOut,
+        truncated = result.truncated,
     )
 }
 
@@ -249,6 +251,7 @@ private fun resultOf(
         stderr = entry.stderr,
         exitCode = entry.exitCode ?: 0,
         timedOut = entry.timedOut,
+        truncated = entry.truncated,
     )
 
 /** A timed-out entry carries no exit code; an entry can't be both. */
