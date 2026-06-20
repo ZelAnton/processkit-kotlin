@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `Supervisor` — keeps a command alive: restart policies (`ALWAYS` / `ON_CRASH` /
+  `NEVER`), bounded restarts, exponential backoff with jitter, a `stopWhen`
+  condition, and a pluggable runner; returns a `SupervisionOutcome` (`StopReason`).
 - `Pipeline` (`Command.pipe(...)`) — shell-free `a | b | c`: stages connected
   stdout→stdin in-process (no shell, no quoting/injection surface), all in one
   shared kill-on-close container, with pipefail attribution and a chain `timeout`.
