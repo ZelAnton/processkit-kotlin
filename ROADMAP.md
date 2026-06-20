@@ -366,8 +366,10 @@ Effort in parentheses. The **lean-core / 0.1** boundary is marked.
    `onStderrLine` handlers (fault-isolated), `stdoutTee` / `stderrTee`, and
    `stdoutEncoding` / `stderrEncoding` — the live output-observation pump (bulk
    verbs + scripted replay). **3e done:** interactive stdin (`keepStdinOpen` +
-   `RunningProcess.takeStdin` → `ProcessStdin`). *Remaining (3f):* output buffer
-   policy + overflow, merged `outputEvents()`.
+   `RunningProcess.takeStdin` → `ProcessStdin`). **3f done:** output buffer policy
+   (`Command.outputBuffer` — bounded / fail-loud / drop-oldest|newest, byte cap,
+   `ProcessResult.truncated`, `ProcessException.OutputTooLarge`) and merged
+   `RunningProcess.outputEvents(): Flow<OutputEvent>`. Step 3 is now complete.
    **← lean-core / 0.1 boundary**
 
 **— Demand-ordered core (still flag-less in Rust; order by real need) —**

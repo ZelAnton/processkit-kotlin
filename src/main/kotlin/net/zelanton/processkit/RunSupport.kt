@@ -58,17 +58,26 @@ internal suspend fun captureRun(
     withContext(Dispatchers.IO) {
         try {
             applyStdin(this, process, command.stdinSource)
+            val policy = command.outputBufferPolicy
             val stdoutSink = lineSinkFor(command.stdoutLineHandler, command.stdoutTeeSink)
             val stderrSink = lineSinkFor(command.stderrLineHandler, command.stderrTeeSink)
-            val stdout = async { pumpStream(process.inputStream, command.stdoutCharset, stdoutSink) }
-            val stderr = async { pumpStream(process.errorStream, command.stderrCharset, stderrSink) }
+            val stdout = async { pumpStream(process.inputStream, command.stdoutCharset, stdoutSink, policy) }
+            val stderr = async { pumpStream(process.errorStream, command.stderrCharset, stderrSink, policy) }
             val timedOut = awaitProcessExit(process, command.timeoutOrNull, killRun)
+            val out = stdout.await()
+            val err = stderr.await()
+            // ERROR overflow surfaces after the pipe is fully drained (the child has
+            // exited), so the failing tool is never left blocked mid-run.
+            if (out.overLimit || err.overLimit) {
+                throw ProcessException.OutputTooLarge(command.program)
+            }
             ProcessResult(
                 program = command.program,
-                stdout = stdout.await(),
-                stderr = String(stderr.await(), command.stderrCharset).normalizeNewlines(),
+                stdout = out.bytes,
+                stderr = String(err.bytes, command.stderrCharset).normalizeNewlines(),
                 exitCode = process.exitValue(),
                 timedOut = timedOut,
+                truncated = out.truncated || err.truncated,
             )
         } catch (failure: Throwable) {
             killRun()

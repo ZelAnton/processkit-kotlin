@@ -81,4 +81,14 @@ public abstract class ProcessException internal constructor(
     public class CassetteMiss internal constructor(
         public val program: String,
     ) : ProcessException("no cassette entry for `$program`")
+
+    /**
+     * Captured output exceeded the command's [OutputBufferPolicy] — its
+     * [OverflowMode.ERROR] ceiling was hit, or a success-checking verb rejected a
+     * truncated capture. Distinct from an [Exit]: the tool may have succeeded; its
+     * output was just too large to retain.
+     */
+    public class OutputTooLarge internal constructor(
+        public val program: String,
+    ) : ProcessException("`$program` produced more output than the buffer policy allows")
 }

@@ -25,6 +25,13 @@ public class ProcessResult<out T> internal constructor(
     public val exitCode: Int,
     /** `true` if the run hit its [Command.timeout] and the tree was killed. */
     public val timedOut: Boolean,
+    /**
+     * `true` if captured output was dropped to stay within the command's
+     * [OutputBufferPolicy] (the retained [stdout]/[stderr] is incomplete). The
+     * success-checking verbs (`run`/`parse`) reject a truncated capture; the
+     * capturing verbs return it as data.
+     */
+    public val truncated: Boolean = false,
 ) {
     /** A clean run: exit code `0` and not timed out. */
     public val isSuccess: Boolean get() = !timedOut && exitCode == 0

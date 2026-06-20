@@ -45,6 +45,7 @@ public suspend fun ProcessRunner.outputString(command: Command): ProcessResult<S
         stderr = result.stderr,
         exitCode = result.exitCode,
         timedOut = result.timedOut,
+        truncated = result.truncated,
     )
 }
 
@@ -53,7 +54,13 @@ public suspend fun ProcessRunner.outputString(command: Command): ProcessResult<S
  * Honors the command's [retry][Command.retry] policy.
  */
 public suspend fun ProcessRunner.run(command: Command): String =
-    retrying(command) { outputString(command).ensureSuccess().stdout.trimEnd() }
+    retrying(command) {
+        val result = outputString(command).ensureSuccess()
+        // `run` presents stdout as complete, so fail loud on a truncating policy
+        // rather than hand back a silently clipped tail.
+        if (result.truncated) throw ProcessException.OutputTooLarge(command.program)
+        result.stdout.trimEnd()
+    }
 
 /** Require success, discarding the output. Honors [retry][Command.retry]. */
 public suspend fun ProcessRunner.runUnit(command: Command) {
@@ -100,7 +107,13 @@ public suspend fun <T> ProcessRunner.parse(
     command: Command,
     transform: (String) -> T,
 ): T {
-    val stdout = retrying(command) { outputString(command).ensureSuccess().stdout }
+    val stdout =
+        retrying(command) {
+            val result = outputString(command).ensureSuccess()
+            // A parser must not silently see a truncated tail.
+            if (result.truncated) throw ProcessException.OutputTooLarge(command.program)
+            result.stdout
+        }
     return transform(stdout)
 }
 

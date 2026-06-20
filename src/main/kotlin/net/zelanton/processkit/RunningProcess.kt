@@ -9,6 +9,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.future.await
@@ -34,16 +35,19 @@ import kotlin.time.Duration.Companion.milliseconds
  * }
  * ```
  *
- * stderr is drained in the background from the moment the process starts (so it
- * never blocks), and a [Command.timeout] is enforced by a watchdog that bounds
- * the stream. Always [close] the handle (use `use { }`): on a dropped or
- * cancelled run that is what reaps the tree.
+ * stderr is drained in the background by the first consuming verb ([stdoutLines] /
+ * [waitForLine] / [waitFor] / [finish]), or carried by [outputEvents]; a
+ * [Command.timeout] is enforced by a watchdog that bounds the stream. Always
+ * [close] the handle (use `use { }`): on a dropped or cancelled run that is what
+ * reaps the tree.
  *
- * **stdout is single-shot.** Exactly one of [stdoutLines] or [waitForLine] may
- * consume it, and [finish] drains whatever is left; a second consumer throws
- * `IllegalStateException`. [waitFor] does *not* consume stdout — if the child is
- * chatty, pair it with one of the consumers (or [finish]) so it cannot block on a
- * full stdout pipe.
+ * **stdout is single-shot, and so is the run's output.** Exactly one of
+ * [stdoutLines], [waitForLine], or [outputEvents] may consume stdout, and [finish]
+ * drains whatever is left; a second consumer throws `IllegalStateException`. Use a
+ * single consumer sequentially — don't, say, [finish] while another coroutine is
+ * still collecting. [waitFor] does *not* consume stdout — if the child is chatty,
+ * pair it with one of the consumers (or [finish]) so it cannot block on a full
+ * stdout pipe.
  */
 public class RunningProcess internal constructor(
     private val process: Process,
@@ -59,8 +63,15 @@ public class RunningProcess internal constructor(
     private val keepStdinOpen: Boolean = false,
 ) : AutoCloseable {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val stderrCapture: Deferred<ByteArray> = scope.async { process.errorStream.readBytes() }
     private val stdoutConsumed = AtomicBoolean(false)
+
+    // stderr is drained lazily by the first consuming verb (stdoutLines / finish /
+    // waitFor[Line]); outputEvents reads it directly instead and sets stderrConsumed
+    // so the byte drain is never also started against the same stream.
+    private val stderrConsumed = AtomicBoolean(false)
+    private val stderrBytes: Deferred<ByteArray> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        scope.async { process.errorStream.readBytes() }
+    }
     private val finishStarted = AtomicBoolean(false)
     private val finishResult = CompletableDeferred<Finished>()
     private val closed = AtomicBoolean(false)
@@ -123,6 +134,7 @@ public class RunningProcess internal constructor(
     public fun stdoutLines(): Flow<String> =
         flow {
             check(stdoutConsumed.compareAndSet(false, true)) { "stdout has already been consumed" }
+            startStderrDrain()
             process.inputStream.bufferedReader(stdoutCharset).use { reader ->
                 var line = reader.readLine()
                 while (line != null) {
@@ -130,6 +142,41 @@ public class RunningProcess internal constructor(
                     line = reader.readLine()
                 }
             }
+        }.flowOn(Dispatchers.IO)
+
+    /**
+     * Stream stdout and stderr together as a single, cold, single-shot [Flow] of
+     * [OutputEvent]s, each line tagged with its source — the way to observe both
+     * streams interleaved in arrival order. Lines are decoded with the command's
+     * encodings. Consumes both streams (it is mutually exclusive with [stdoutLines],
+     * and afterwards [finish] reports an empty stderr — the events carried it).
+     */
+    public fun outputEvents(): Flow<OutputEvent> =
+        channelFlow {
+            check(stdoutConsumed.compareAndSet(false, true)) { "stdout has already been consumed" }
+            stderrConsumed.set(true) // events own stderr; the byte drain must not also read it
+            val stdoutReader =
+                launch {
+                    process.inputStream.bufferedReader(stdoutCharset).use { reader ->
+                        var line = reader.readLine()
+                        while (line != null) {
+                            send(OutputEvent.Stdout(line))
+                            line = reader.readLine()
+                        }
+                    }
+                }
+            val stderrReader =
+                launch {
+                    process.errorStream.bufferedReader(stderrCharset).use { reader ->
+                        var line = reader.readLine()
+                        while (line != null) {
+                            send(OutputEvent.Stderr(line))
+                            line = reader.readLine()
+                        }
+                    }
+                }
+            stdoutReader.join()
+            stderrReader.join()
         }.flowOn(Dispatchers.IO)
 
     /**
@@ -142,6 +189,7 @@ public class RunningProcess internal constructor(
         if (finishStarted.compareAndSet(false, true)) {
             try {
                 closeUntakenStdin()
+                startStderrDrain()
                 val drain =
                     if (stdoutConsumed.compareAndSet(false, true)) {
                         scope.async { runCatching { process.inputStream.readBytes() } }
@@ -150,7 +198,9 @@ public class RunningProcess internal constructor(
                     }
                 process.onExit().await()
                 drain?.await()
-                val stderr = String(stderrCapture.await(), stderrCharset).normalizeNewlines()
+                // outputEvents already delivered stderr; otherwise drain the bytes.
+                val stderr =
+                    if (stderrConsumed.get()) "" else String(stderrBytes.await(), stderrCharset).normalizeNewlines()
                 finishResult.complete(Finished(process.exitValue(), stderr, timedOut))
             } catch (failure: Throwable) {
                 killTree()
@@ -174,6 +224,7 @@ public class RunningProcess internal constructor(
      */
     public suspend fun waitFor(): Int {
         closeUntakenStdin()
+        startStderrDrain()
         process.onExit().await()
         return process.exitValue()
     }
@@ -185,6 +236,13 @@ public class RunningProcess internal constructor(
         if (keepStdinOpen && stdinClaimed.compareAndSet(false, true)) {
             runCatching { process.outputStream.close() }
         }
+    }
+
+    // Start the background stderr byte-drain (so a chatty stderr can't block the
+    // child) unless outputEvents is reading stderr itself. Touching the lazy starts
+    // it; .start() makes this an unambiguous statement and is a no-op if running.
+    private fun startStderrDrain() {
+        if (!stderrConsumed.get()) stderrBytes.start()
     }
 
     /**
@@ -201,6 +259,7 @@ public class RunningProcess internal constructor(
         predicate: (String) -> Boolean,
     ): String {
         check(stdoutConsumed.compareAndSet(false, true)) { "stdout has already been consumed" }
+        startStderrDrain()
         val matched = CompletableDeferred<String?>()
         // A background reader drains stdout for the child's whole life: it reports
         // the first matching line, then keeps reading so a chatty child can't block

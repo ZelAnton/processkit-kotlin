@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Output buffer policy: `Command.outputBuffer(OutputBufferPolicy)` caps how much
+  captured output the bulk verbs retain — `bounded(n)` (ring buffer, drop oldest),
+  `failLoud(n)` (error past the ceiling), `withMaxBytes` / `withOverflow`
+  (`DROP_OLDEST` / `DROP_NEWEST` / `ERROR`). A dropped capture sets the new
+  `ProcessResult.truncated`; `run`/`parse` reject a truncated capture, and the
+  fail-loud ceiling raises the new `ProcessException.OutputTooLarge`. The pipe is
+  always drained, so the child never blocks.
+- `RunningProcess.outputEvents(): Flow<OutputEvent>` — stdout and stderr merged
+  into one stream, each line tagged `OutputEvent.Stdout`/`Stderr` in arrival order.
 - Interactive stdin: `Command.keepStdinOpen()` + `RunningProcess.takeStdin()` hand
   back a `ProcessStdin` writer (`write` / `writeLine` / `flush` / `close`) so a
   streamed child can be fed incrementally. Only affects `start()`; the bulk verbs

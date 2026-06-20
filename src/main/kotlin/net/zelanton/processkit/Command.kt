@@ -57,6 +57,8 @@ public class Command(
         private set
     internal var keepStdinOpen: Boolean = false
         private set
+    internal var outputBufferPolicy: OutputBufferPolicy = OutputBufferPolicy.unbounded()
+        private set
 
     internal val commandLine: List<String> get() =
         buildList {
@@ -163,6 +165,13 @@ public class Command(
     public fun keepStdinOpen(): Command = apply { keepStdinOpen = true }
 
     /**
+     * Cap how much captured output the bulk verbs retain (see [OutputBufferPolicy]).
+     * The pump still drains the pipe; only retention is bounded. A truncated capture
+     * sets [ProcessResult.truncated] and is rejected by `run`/`parse`.
+     */
+    public fun outputBuffer(policy: OutputBufferPolicy): Command = apply { outputBufferPolicy = policy }
+
+    /**
      * Retry the run while [retryIf] accepts the failure, up to [maxAttempts] total
      * attempts, sleeping [backoff] between tries (see [RetryWhen] for ready-made
      * classifiers).
@@ -255,6 +264,7 @@ public class Command(
         clone.stdoutCharset = stdoutCharset
         clone.stderrCharset = stderrCharset
         clone.keepStdinOpen = keepStdinOpen
+        clone.outputBufferPolicy = outputBufferPolicy
         return clone
     }
 
