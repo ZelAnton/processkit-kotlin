@@ -378,7 +378,8 @@ Effort in parentheses. The **lean-core / 0.1** boundary is marked.
 6. **Readiness probes** *(S–M)* — `waitForLine` / `waitForPort` / `waitFor`;
    `NotReady` distinct from `Timeout`; a probe does not kill the child.
 7. **Retry** *(S)* — `Command.retry`: replay one run to success — classifier +
-   backoff/jitter (distinct from Supervision's keep-alive).
+   fixed backoff between tries (distinct from Supervision's keep-alive, which owns
+   the jittered exponential backoff). `RetryWhen` ships ready-made classifiers.
 8. **CliClient + test doubles** *(M)* — `CliClient` reusable typed-wrapper core;
    formalize the doubles on the `ProcessRunner` seam: `ScriptedRunner` (canned
    replies, drives streaming too) + `RecordingRunner` (input assertions).

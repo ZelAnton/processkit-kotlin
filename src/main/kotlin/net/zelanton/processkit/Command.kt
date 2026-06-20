@@ -101,11 +101,19 @@ public class Command(
      * [exitCode] / [probe]) — the ones that surface failure as a
      * [ProcessException] the classifier can inspect. The capturing verbs
      * ([outputString] / [outputBytes]) hand back every outcome as data and do not
-     * retry, and a cancelled run is never retried.
+     * retry, and a cancelled run is never retried. Note [probe] returns exit `0`/`1`
+     * as data (not a failure), so a [RetryWhen.exitCode] of `0` or `1` never
+     * triggers a probe retry.
      *
      * Each attempt re-executes the whole command as a fresh process, so only use
      * it for operations that are safe to repeat — a side effect that already landed
-     * once will be replayed.
+     * once will be replayed. Each attempt also re-reads the [stdin] source from the
+     * start, so pair retry only with a replayable source ([Stdin.fromString] /
+     * [Stdin.fromBytes], or a stable [Stdin.fromFile]).
+     *
+     * Through a [ProcessGroup] a failed attempt's child subtree is not reaped until
+     * the group closes; for per-attempt cleanup, retry on the default private
+     * containment (the [Command] verbs, backed by [JobRunner]).
      */
     public fun retry(
         maxAttempts: Int,
