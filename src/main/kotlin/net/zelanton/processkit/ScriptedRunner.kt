@@ -49,9 +49,11 @@ public class ScriptedRunner : ProcessRunner {
         val reply =
             rules.firstOrNull { it.first(line) }?.second
                 ?: fallbackReply
+                // Redacted like `Invocation`: program + arg count, never the argv
+                // (so this message is safe even if it reaches a log via a retry).
                 ?: throw ProcessException.Spawn(
                     command.program,
-                    IllegalStateException("no scripted reply for ${line.joinToString(" ")}"),
+                    IllegalStateException("no scripted reply for `${command.program}` (${line.size - 1} arg(s))"),
                 )
         return ProcessResult(
             program = command.program,

@@ -60,12 +60,20 @@ dependencies {
     // they are an `api` dependency — consumers compile against them.
     api(libs.kotlinx.coroutines.core)
 
+    // SLF4J is an internal detail (the library logs through the facade only, never
+    // exposing it in the public API), so `implementation`. With no binding on the
+    // consumer's runtime classpath, SLF4J 2.x is a silent no-op.
+    implementation(libs.slf4j.api)
+
     // kotlin("test") routes to the JUnit Platform (Jupiter) backend because
     // junit-jupiter is on the test classpath and `useJUnitPlatform()` is set.
     testImplementation(kotlin("test"))
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.kotlinx.coroutines.test)
+    // A logback binding (test-only) so a ListAppender can capture and assert on
+    // the library's log output (and that secrets never reach it).
+    testImplementation(libs.logback.classic)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 

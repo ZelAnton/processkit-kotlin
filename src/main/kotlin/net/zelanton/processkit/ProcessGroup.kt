@@ -85,7 +85,10 @@ public class ProcessGroup(
      * process-group mechanism (the [Mechanism.JOB_OBJECT] / cgroup mechanisms are
      * immune).
      */
-    public fun signal(signal: Signal): Unit = containment.signal(signal)
+    public fun signal(signal: Signal) {
+        log.debug("group: signal {} ({})", signal, containment.mechanism)
+        containment.signal(signal)
+    }
 
     /**
      * Suspend (freeze) every process in the group — `SIGSTOP` to each group on
@@ -94,10 +97,16 @@ public class ProcessGroup(
      * increment). A suspended tree can still be hard-killed ([close]); a graceful
      * [shutdown] cannot make progress until the tree is [resume]d first.
      */
-    public fun suspend(): Unit = containment.suspendAll()
+    public fun suspend() {
+        log.debug("group: suspend ({})", containment.mechanism)
+        containment.suspendAll()
+    }
 
     /** Resume a tree suspended by [suspend] (`SIGCONT` on Unix). See [suspend]. */
-    public fun resume(): Unit = containment.resumeAll()
+    public fun resume() {
+        log.debug("group: resume ({})", containment.mechanism)
+        containment.resumeAll()
+    }
 
     /**
      * A point-in-time snapshot of the pids currently in the group — for
@@ -150,6 +159,7 @@ public class ProcessGroup(
      * signal, so this is an immediate atomic kill.
      */
     public suspend fun shutdown(grace: Duration = 5.seconds) {
+        log.debug("group: shutdown (grace {}, {})", grace, containment.mechanism)
         val gracefulSignalSent = containment.requestStop()
         if (gracefulSignalSent) {
             delay(grace)

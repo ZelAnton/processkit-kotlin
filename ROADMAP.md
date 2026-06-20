@@ -414,12 +414,12 @@ Effort in parentheses. The **lean-core / 0.1** boundary is marked.
     unbounded group. *Deferred to 11b:* the Linux cgroup v2 backend (only usable
     at the real cgroup root — not in containers / under systemd, so untestable in
     Docker CI) and Windows `cpuQuota` via CPU rate control.
-12. **observability — replaces `tracing`** *(S)* — the optional **SLF4J** logger
-    (package default = no-op without a binding): spawn/exit, timeout/cancel,
-    teardown, retries, storms. **Never logs argv or env.** The JVM's standard
-    structured-logging seam instead of a cfg feature; a Logback / log4j2 /
-    OpenTelemetry backend rides the same SLF4J binding. (Woven in as features
-    land; finalised here.)
+12. **observability — replaces `tracing`** *(S)* — **done**: the **SLF4J** logger
+    `net.zelanton.processkit` (no-op without a binding) logs run start/finish,
+    timeout, retries, supervisor restarts, and group signal/suspend/resume/shutdown
+    at DEBUG. **Never logs argv or env** (program names + exit codes only). The
+    JVM's standard structured-logging seam — a Logback / log4j2 / OpenTelemetry
+    backend rides the same SLF4J binding.
 13. **record/replay — replaces `record`** *(M)* — JSON cassettes over the
     `ProcessRunner` seam (`kotlinx.serialization`); record once, replay
     hermetically; the crate's secret-handling discipline mirrored (`0600` on

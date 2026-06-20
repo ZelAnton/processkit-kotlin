@@ -129,6 +129,7 @@ public class Supervisor(
             if (restarts >= maxRestarts) {
                 return SupervisionOutcome(result, restarts, StopReason.MAX_RESTARTS_REACHED)
             }
+            log.debug("supervisor: restarting `{}` (restart {})", command.program, restarts + 1)
             delay(backoffDelay(restarts))
             restarts++
         }

@@ -1,0 +1,12 @@
+<configuration>
+    <!-- Keep the test run quiet by default; LoggingTest raises the
+         net.zelanton.processkit logger to DEBUG programmatically to capture it. -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{24} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    <root level="WARN">
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>

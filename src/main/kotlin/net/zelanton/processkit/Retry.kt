@@ -34,6 +34,14 @@ internal suspend fun <T> retrying(
             return attempt()
         } catch (failure: ProcessException) {
             if (tries < policy.maxAttempts && policy.classifier(failure)) {
+                log.debug(
+                    "retry: `{}` attempt {}/{} failed ({}); retrying after {}",
+                    command.program,
+                    tries,
+                    policy.maxAttempts,
+                    failure.message,
+                    policy.backoff,
+                )
                 delay(policy.backoff)
             } else {
                 throw failure

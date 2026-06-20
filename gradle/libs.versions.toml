@@ -33,6 +33,12 @@ kover = "0.9.8"
 # streaming, structured-concurrency cancellation). The `-test` artifact provides
 # runTest + the virtual clock used to test timeouts/backoff without real waits.
 kotlinx-coroutines = "1.10.2"
+# SLF4J — the standard JVM logging facade. The library logs through the API only;
+# consumers add a binding (logback, etc.). 2.0.x defaults to a no-op (no binding
+# required). logback (test-only) provides a binding + ListAppender for asserting
+# on log output.
+slf4j = "2.0.16"
+logback = "1.5.25"
 
 [libraries]
 # JUnit BOM — aligns every junit-* artifact to one version; the dependencies
@@ -43,6 +49,9 @@ junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher
 
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
+
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 
 # Bundles group related libraries so a build script can pull them with a single
 # alias, e.g. `testImplementation(libs.bundles.testing)`. Uncomment and extend

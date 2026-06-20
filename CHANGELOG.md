@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Observability via SLF4J: the library logs lifecycle events (run start/finish,
+  retry attempts, supervisor restarts, group signal/suspend/resume/shutdown) at
+  DEBUG under the `net.zelanton.processkit` logger. Messages are secret-safe —
+  program names and exit codes only, never argv arguments or environment values.
+  SLF4J is an `implementation` dependency; with no binding it is a silent no-op.
 - Resource limits: `ProcessGroup(ResourceLimits(...))` caps the whole tree's
   committed memory (`memoryMax`) and live process count (`maxProcesses`), enforced
   by the Windows Job Object. A cap that can't be enforced — any limit on the

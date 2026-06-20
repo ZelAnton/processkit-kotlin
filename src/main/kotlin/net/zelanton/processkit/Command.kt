@@ -184,5 +184,7 @@ public class Command(
         return clone
     }
 
+    // Renders the full command line (arguments included), so never pass a Command
+    // to a logger — argv can carry secrets (e.g. `--token=…`). Log `program` only.
     override fun toString(): String = "Command(${commandLine.joinToString(" ")})"
 }
