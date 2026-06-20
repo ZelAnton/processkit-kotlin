@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `Pipeline` (`Command.pipe(...)`) — shell-free `a | b | c`: stages connected
+  stdout→stdin in-process (no shell, no quoting/injection surface), all in one
+  shared kill-on-close container, with pipefail attribution and a chain `timeout`.
 - `RunningProcess.waitFor()` plus `waitAny(...)` / `waitAll(...)` — wait for a
   process to exit (returning its exit code), race several for the first to exit,
   or join several; the handles stay usable afterwards.

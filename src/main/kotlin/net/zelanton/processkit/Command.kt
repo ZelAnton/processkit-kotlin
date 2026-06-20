@@ -119,5 +119,8 @@ public class Command(
         return RunningProcess(process, containment, ownsContainer = true, timeoutOrNull, stdinSource)
     }
 
+    /** Start a shell-free pipeline: this command's stdout feeds [next]'s stdin. */
+    public fun pipe(next: Command): Pipeline = Pipeline(this, next)
+
     override fun toString(): String = "Command(${commandLine.joinToString(" ")})"
 }
