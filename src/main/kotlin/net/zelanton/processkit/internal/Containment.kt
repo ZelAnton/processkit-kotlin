@@ -2,6 +2,7 @@ package net.zelanton.processkit.internal
 
 import net.zelanton.processkit.Mechanism
 import net.zelanton.processkit.ProcessException
+import net.zelanton.processkit.ProcessGroupStats
 import net.zelanton.processkit.Signal
 import java.io.IOException
 import java.lang.foreign.Arena
@@ -13,6 +14,7 @@ import java.lang.foreign.SymbolLookup
 import java.lang.foreign.ValueLayout
 import java.lang.invoke.MethodHandle
 import java.nio.file.Path
+import kotlin.time.Duration.Companion.nanoseconds
 
 /** The host operating system, detected once. */
 internal enum class Os {
@@ -77,6 +79,9 @@ internal interface Containment : AutoCloseable {
 
     /** Bring an externally-started process (by [pid]) under this container. */
     fun adopt(pid: Long)
+
+    /** A snapshot of the container's resource usage. */
+    fun stats(): ProcessGroupStats
 
     override fun close() {
         killAll()
@@ -197,6 +202,18 @@ internal class PosixGroupContainment : Containment {
     override fun adopt(pid: Long) {
         synchronized(lock) { adoptedPids.add(pid) }
     }
+
+    // No kernel accounting without a cgroup, so only the live-group count is
+    // available; CPU and memory are unreportable on this backend.
+    override fun stats(): ProcessGroupStats =
+        synchronized(lock) {
+            pruneDead()
+            ProcessGroupStats(
+                activeProcessCount = groupLeaders.size + adoptedPids.size,
+                totalCpuTime = null,
+                peakMemoryBytes = null,
+            )
+        }
 
     // Caller holds [lock]. Group leaders take the whole group (`kill(-pgid)`);
     // adopted children are signalled individually.
@@ -323,6 +340,18 @@ internal class WindowsJobContainment : Containment {
             spawnedPids.add(pid)
         }
     }
+
+    override fun stats(): ProcessGroupStats =
+        synchronized(lock) {
+            check(!closed) { "process group is closed" }
+            val (active, cpu100ns) = Win32.queryAccounting(job)
+            ProcessGroupStats(
+                activeProcessCount = active,
+                // Job accounting CPU is in 100-nanosecond units.
+                totalCpuTime = (cpu100ns * 100).nanoseconds,
+                peakMemoryBytes = Win32.queryPeakJobMemory(job),
+            )
+        }
 
     override fun close() {
         synchronized(lock) {
@@ -453,13 +482,48 @@ internal object Win32 {
             ValueLayout.JAVA_LONG,
             ValueLayout.JAVA_LONG,
             // memory limits tail
-            ValueLayout.JAVA_LONG,
-            ValueLayout.JAVA_LONG,
-            ValueLayout.JAVA_LONG,
-            ValueLayout.JAVA_LONG,
+            ValueLayout.JAVA_LONG.withName("ProcessMemoryLimit"),
+            ValueLayout.JAVA_LONG.withName("JobMemoryLimit"),
+            ValueLayout.JAVA_LONG.withName("PeakProcessMemoryUsed"),
+            ValueLayout.JAVA_LONG.withName("PeakJobMemoryUsed"),
         )
     private val limitFlagsOffset: Long =
         extendedLimitLayout.byteOffset(MemoryLayout.PathElement.groupElement("LimitFlags"))
+    private val peakJobMemoryUsedOffset: Long =
+        extendedLimitLayout.byteOffset(MemoryLayout.PathElement.groupElement("PeakJobMemoryUsed"))
+
+    private const val JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION_CLASS: Int = 1
+    private val queryInformationJobObject =
+        bind(
+            "QueryInformationJobObject",
+            FunctionDescriptor.of(
+                ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS,
+                ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS,
+                ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS,
+            ),
+        )
+
+    // JOBOBJECT_BASIC_ACCOUNTING_INFORMATION (x64).
+    private val basicAccountingLayout: MemoryLayout =
+        MemoryLayout.structLayout(
+            ValueLayout.JAVA_LONG.withName("TotalUserTime"),
+            ValueLayout.JAVA_LONG.withName("TotalKernelTime"),
+            ValueLayout.JAVA_LONG.withName("ThisPeriodTotalUserTime"),
+            ValueLayout.JAVA_LONG.withName("ThisPeriodTotalKernelTime"),
+            ValueLayout.JAVA_INT.withName("TotalPageFaultCount"),
+            ValueLayout.JAVA_INT.withName("TotalProcesses"),
+            ValueLayout.JAVA_INT.withName("ActiveProcesses"),
+            ValueLayout.JAVA_INT.withName("TotalTerminatedProcesses"),
+        )
+    private val totalUserTimeOffset: Long =
+        basicAccountingLayout.byteOffset(MemoryLayout.PathElement.groupElement("TotalUserTime"))
+    private val totalKernelTimeOffset: Long =
+        basicAccountingLayout.byteOffset(MemoryLayout.PathElement.groupElement("TotalKernelTime"))
+    private val activeProcessesOffset: Long =
+        basicAccountingLayout.byteOffset(MemoryLayout.PathElement.groupElement("ActiveProcesses"))
 
     internal fun createKillOnCloseJob(): MemorySegment {
         val job = createJobObjectW.invoke(MemorySegment.NULL, MemorySegment.NULL) as MemorySegment
@@ -503,6 +567,45 @@ internal object Win32 {
             closeHandleFn.invoke(process) as Int
         }
     }
+
+    /** Active process count and cumulative CPU time (in 100-ns units) for [job]. */
+    internal fun queryAccounting(job: MemorySegment): Pair<Int, Long> =
+        Arena.ofConfined().use { arena ->
+            val info = arena.allocate(basicAccountingLayout)
+            val ok =
+                queryInformationJobObject.invoke(
+                    job,
+                    JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION_CLASS,
+                    info,
+                    basicAccountingLayout.byteSize().toInt(),
+                    MemorySegment.NULL,
+                ) as Int
+            if (ok == 0) {
+                throwLastError("QueryInformationJobObject(accounting)")
+            }
+            val cpu100ns =
+                info.get(ValueLayout.JAVA_LONG, totalUserTimeOffset) +
+                    info.get(ValueLayout.JAVA_LONG, totalKernelTimeOffset)
+            info.get(ValueLayout.JAVA_INT, activeProcessesOffset) to cpu100ns
+        }
+
+    /** Peak committed memory (bytes) charged to [job] (`PeakJobMemoryUsed`). */
+    internal fun queryPeakJobMemory(job: MemorySegment): Long =
+        Arena.ofConfined().use { arena ->
+            val info = arena.allocate(extendedLimitLayout)
+            val ok =
+                queryInformationJobObject.invoke(
+                    job,
+                    JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
+                    info,
+                    extendedLimitLayout.byteSize().toInt(),
+                    MemorySegment.NULL,
+                ) as Int
+            if (ok == 0) {
+                throwLastError("QueryInformationJobObject(extended)")
+            }
+            info.get(ValueLayout.JAVA_LONG, peakJobMemoryUsedOffset)
+        }
 
     internal fun terminateJob(job: MemorySegment) {
         terminateJobObject.invoke(job, 1) as Int

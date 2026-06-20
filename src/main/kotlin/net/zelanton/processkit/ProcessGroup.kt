@@ -2,9 +2,13 @@ package net.zelanton.processkit
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import net.zelanton.processkit.internal.Containment
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -111,6 +115,29 @@ public class ProcessGroup :
      * captured (POSIX forbids re-grouping a child that has already `exec`'d).
      */
     public fun adopt(process: Process): Unit = containment.adopt(process.pid())
+
+    /**
+     * A snapshot of the group's resource usage (live process count and, where the
+     * platform supports it, total CPU time and peak memory — `null` on the
+     * [Mechanism.PROCESS_GROUP] backend). See [ProcessGroupStats].
+     */
+    public fun stats(): ProcessGroupStats = containment.stats()
+
+    /**
+     * Sample [stats] every [every] as a cold [Flow]: the first snapshot is emitted
+     * immediately, then one per interval, until a snapshot can't be read (e.g.
+     * after the group is torn down) or the collector stops. A zero/negative
+     * interval is clamped to 1 ms. Snapshots are taken on [Dispatchers.IO].
+     */
+    public fun sampleStats(every: Duration): Flow<ProcessGroupStats> =
+        flow {
+            val interval = every.coerceAtLeast(1.milliseconds)
+            while (true) {
+                val snapshot = runCatching { containment.stats() }.getOrNull() ?: break
+                emit(snapshot)
+                delay(interval)
+            }
+        }.flowOn(Dispatchers.IO)
 
     /**
      * Graceful teardown: ask the tree to stop (SIGTERM on Unix), wait up to

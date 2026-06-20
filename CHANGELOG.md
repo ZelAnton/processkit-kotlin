@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Group stats: `ProcessGroup.stats()` returns a `ProcessGroupStats` snapshot
+  (active process count and, under a Job Object, total CPU time and peak memory;
+  `null` on the process-group backend), and `sampleStats(every)` is a `Flow` of
+  snapshots (first immediately, then per interval, ending when the group can no
+  longer report).
 - Process-control on `ProcessGroup`: `signal(Signal)` (broadcast a `Signal` to the
   whole tree — any signal on Unix; only `Signal.Kill` on Windows, else
   `ProcessException.Unsupported`), `suspend()` / `resume()` (freeze/thaw the tree

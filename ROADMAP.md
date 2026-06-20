@@ -401,9 +401,12 @@ Effort in parentheses. The **lean-core / 0.1** boundary is marked.
    `adopt` (Job assignment), members = spawned roots + live descendants.
    *Deferred to 9b:* Windows `suspend`/`resume` (per-thread enumeration) and
    kernel-authoritative Windows `members` (`QueryInformationJobObject`).
-10. **stats** *(M)* — group + per-run resource metrics, `sampleStats` series
-    (`Flow`), per-run `profile`. Counters via FFM (no heavy dependency); likely a
-    small subpackage for surface clarity, not a module split.
+10. **stats** *(M)* — group stats **done (10a)**: `ProcessGroupStats` +
+    `ProcessGroup.stats()` (Job Object accounting on Windows; live-group count on
+    the process-group backend, CPU/memory `null`) + `sampleStats(): Flow`.
+    *Deferred to 10b:* per-run `RunProfile` / `RunningProcess.{cpuTime,
+    peakMemoryBytes, profile}` (per-process `/proc` parsing + `GetProcessTimes` /
+    memory FFM).
 11. **limits** *(M)* — whole-tree caps (`memoryMax` / `maxProcesses` /
     `cpuQuota`) on Job Object + cgroup; `ResourceLimit` (never a silently
     unbounded group) when a cap can't be enforced.
