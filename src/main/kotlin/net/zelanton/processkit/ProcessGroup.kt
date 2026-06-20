@@ -60,6 +60,59 @@ public class ProcessGroup :
     }
 
     /**
+     * Broadcast [signal] to every process in the group (best-effort: members that
+     * have already exited are skipped, an empty group is a no-op).
+     *
+     * On Unix any signal reaches every live member of the tree. On **Windows**
+     * only [Signal.Kill] is deliverable (it maps to the Job Object terminate, the
+     * same hard kill as [close]); any other signal throws
+     * [ProcessException.Unsupported]. [Signal.Kill] is routed through the same
+     * whole-tree hard kill as [close] so it cannot miss a process forked
+     * mid-broadcast.
+     *
+     * On the [Mechanism.PROCESS_GROUP] fallback a fully-exited group is dropped
+     * before signalling, but a pid reaped and then reused by the OS as a new group
+     * leader is indistinguishable from the original — an inherent limit of the
+     * process-group mechanism (the [Mechanism.JOB_OBJECT] / cgroup mechanisms are
+     * immune).
+     */
+    public fun signal(signal: Signal): Unit = containment.signal(signal)
+
+    /**
+     * Suspend (freeze) every process in the group — `SIGSTOP` to each group on
+     * Unix. **Windows is not yet supported** and throws
+     * [ProcessException.Unsupported] (per-thread suspend lands in a later
+     * increment). A suspended tree can still be hard-killed ([close]); a graceful
+     * [shutdown] cannot make progress until the tree is [resume]d first.
+     */
+    public fun suspend(): Unit = containment.suspendAll()
+
+    /** Resume a tree suspended by [suspend] (`SIGCONT` on Unix). See [suspend]. */
+    public fun resume(): Unit = containment.resumeAll()
+
+    /**
+     * A point-in-time snapshot of the pids currently in the group — for
+     * diagnostics or targeted per-pid action. A returned pid may exit immediately
+     * after, and a process spawned during the call may be missing.
+     *
+     * On Unix this is the tracked group leaders plus any [adopt]ed child (one pid
+     * each; descendants are contained but not enumerated). On Windows it is each
+     * spawned/adopted root that is still alive plus its live descendants.
+     */
+    public fun members(): List<Long> = containment.members()
+
+    /**
+     * Bring an externally-started [process] under this group's lifecycle, so it is
+     * signalled and reaped with the group.
+     *
+     * On Windows the process is assigned to the Job Object (its future children
+     * are captured too). On the Unix process-group mechanism it is tracked
+     * individually — signalled/killed with the group, but its own forks are not
+     * captured (POSIX forbids re-grouping a child that has already `exec`'d).
+     */
+    public fun adopt(process: Process): Unit = containment.adopt(process.pid())
+
+    /**
      * Graceful teardown: ask the tree to stop (SIGTERM on Unix), wait up to
      * [grace], then hard-kill whatever remains. On Windows there is no graceful
      * signal, so this is an immediate atomic kill.

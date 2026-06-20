@@ -1,6 +1,8 @@
 package net.zelanton.processkit.internal
 
 import net.zelanton.processkit.Mechanism
+import net.zelanton.processkit.ProcessException
+import net.zelanton.processkit.Signal
 import java.io.IOException
 import java.lang.foreign.Arena
 import java.lang.foreign.FunctionDescriptor
@@ -61,6 +63,21 @@ internal interface Containment : AutoCloseable {
      */
     fun requestStop(): Boolean
 
+    /** Broadcast [signal] to every member (best-effort; exited members skipped). */
+    fun signal(signal: Signal)
+
+    /** Suspend (freeze) every member of the container. */
+    fun suspendAll()
+
+    /** Resume every member suspended by [suspendAll]. */
+    fun resumeAll()
+
+    /** A point-in-time snapshot of the pids currently in the container. */
+    fun members(): List<Long>
+
+    /** Bring an externally-started process (by [pid]) under this container. */
+    fun adopt(pid: Long)
+
     override fun close() {
         killAll()
     }
@@ -112,8 +129,16 @@ internal fun newProcessBuilder(
 internal class PosixGroupContainment : Containment {
     override val mechanism: Mechanism = Mechanism.PROCESS_GROUP
 
-    // setsid makes the leader's pgid == its pid, so we track pids as pgids.
+    private val lock = Any()
+
+    // setsid makes the leader's pgid == its pid, so we track pids as pgids and
+    // signal the whole group with `kill(-pgid, sig)`.
     private val groupLeaders = mutableListOf<Long>()
+
+    // Adopted children cannot be re-grouped (POSIX forbids re-grouping after exec),
+    // so they are tracked individually and signalled with `kill(pid, sig)` — their
+    // own descendants are not captured.
+    private val adoptedPids = mutableListOf<Long>()
 
     override fun spawn(
         command: List<String>,
@@ -125,26 +150,83 @@ internal class PosixGroupContainment : Containment {
         // are applied to setsid and inherited by the target it execs.
         val process =
             newProcessBuilder(listOf("setsid") + command, workingDir, environment, clearEnvironment).start()
-        synchronized(groupLeaders) { groupLeaders.add(process.pid()) }
+        synchronized(lock) {
+            pruneDead()
+            groupLeaders.add(process.pid())
+        }
         return process
     }
 
     override fun killAll() {
-        synchronized(groupLeaders) {
-            for (pgid in groupLeaders) {
-                Libc.killGroup(pgid, Libc.SIGKILL)
-            }
+        synchronized(lock) {
+            broadcast(Libc.SIGKILL)
             groupLeaders.clear()
+            adoptedPids.clear()
         }
     }
 
     override fun requestStop(): Boolean {
-        synchronized(groupLeaders) {
-            for (pgid in groupLeaders) {
-                Libc.killGroup(pgid, Libc.SIGTERM)
-            }
-        }
+        synchronized(lock) { broadcast(Libc.SIGTERM) }
         return true
+    }
+
+    override fun signal(signal: Signal) {
+        // SIGKILL is the whole-tree hard kill, routed through killAll so it can't
+        // miss a process forked mid-broadcast; other signals are a per-member send.
+        if (signal.deliversAsKill) {
+            killAll()
+        } else {
+            synchronized(lock) { broadcast(signal.rawUnix) }
+        }
+    }
+
+    override fun suspendAll() {
+        synchronized(lock) { broadcast(Libc.SIGSTOP) }
+    }
+
+    override fun resumeAll() {
+        synchronized(lock) { broadcast(Libc.SIGCONT) }
+    }
+
+    override fun members(): List<Long> =
+        synchronized(lock) {
+            pruneDead()
+            groupLeaders + adoptedPids
+        }
+
+    override fun adopt(pid: Long) {
+        synchronized(lock) { adoptedPids.add(pid) }
+    }
+
+    // Caller holds [lock]. Group leaders take the whole group (`kill(-pgid)`);
+    // adopted children are signalled individually.
+    private fun broadcast(signal: Int) {
+        pruneDead()
+        for (pgid in groupLeaders) {
+            Libc.killGroup(pgid, signal)
+        }
+        for (pid in adoptedPids) {
+            Libc.killProcess(pid, signal)
+        }
+    }
+
+    // Caller holds [lock]. Drop groups/children that no longer exist so a signal
+    // can never land on a recycled pid. `kill(target, 0)` is the existence probe:
+    // 0 means the target still exists (a group is live while ANY member —
+    // descendants included — survives), non-zero means it is gone.
+    //
+    // This closes the common "fully exited, then signalled" window and bounds the
+    // tracking lists. A residual race remains inherent to the process-group
+    // mechanism: a pid reaped and then reused as a *new* group leader is
+    // indistinguishable here from the original; the Job Object / cgroup mechanisms
+    // do not have this limitation.
+    //
+    // A non-zero result is treated as "gone" (`ESRCH`). The only other realistic
+    // `kill(_, 0)` failure, `EPERM`, cannot arise here: every member is a
+    // same-uid child this process spawned (or adopted).
+    private fun pruneDead() {
+        groupLeaders.removeAll { pgid -> Libc.killGroup(pgid, 0) != 0 }
+        adoptedPids.removeAll { pid -> Libc.killProcess(pid, 0) != 0 }
     }
 }
 
@@ -159,6 +241,10 @@ internal class WindowsJobContainment : Containment {
     private val job: MemorySegment = Win32.createKillOnCloseJob()
     private val lock = Any()
     private var closed = false
+
+    // Pids we assigned to the job — the roots of the contained tree, used to
+    // enumerate [members] via their live descendants.
+    private val spawnedPids = mutableListOf<Long>()
 
     override fun spawn(
         command: List<String>,
@@ -178,6 +264,7 @@ internal class WindowsJobContainment : Containment {
             process.destroyForcibly()
             throw failure
         }
+        synchronized(lock) { spawnedPids.add(process.pid()) }
         return process
     }
 
@@ -190,6 +277,52 @@ internal class WindowsJobContainment : Containment {
 
     // Job Objects have no graceful-stop signal; close()/killAll() is atomic.
     override fun requestStop(): Boolean = false
+
+    override fun signal(signal: Signal) {
+        // Only SIGKILL is deliverable on Windows — it maps to the Job Object
+        // terminate. Every other signal has no Windows equivalent.
+        if (signal.deliversAsKill) {
+            killAll()
+        } else {
+            throw ProcessException.Unsupported("signal($signal)")
+        }
+    }
+
+    // Suspending a Job Object means suspending every thread of every member; the
+    // thread-enumeration backend lands in a later increment.
+    override fun suspendAll(): Unit = throw ProcessException.Unsupported("suspend")
+
+    override fun resumeAll(): Unit = throw ProcessException.Unsupported("resume")
+
+    override fun members(): List<Long> {
+        val roots = synchronized(lock) { spawnedPids.toList() }
+        val live = LinkedHashSet<Long>()
+        val dead = mutableListOf<Long>()
+        for (pid in roots) {
+            val handle = ProcessHandle.of(pid).orElse(null)
+            if (handle != null && handle.isAlive) {
+                live.add(pid)
+                handle.descendants().forEach { live.add(it.pid()) }
+            } else {
+                dead.add(pid)
+            }
+        }
+        // Drop roots that have exited so the tracking list stays bounded.
+        if (dead.isNotEmpty()) {
+            synchronized(lock) { spawnedPids.removeAll(dead.toSet()) }
+        }
+        return live.toList()
+    }
+
+    override fun adopt(pid: Long) {
+        synchronized(lock) {
+            // Assign under the lock with a closed-guard: a CloseHandle from a
+            // concurrent close() must not race assignment into a recycled handle.
+            check(!closed) { "process group is closed" }
+            Win32.assignToJob(job, pid)
+            spawnedPids.add(pid)
+        }
+    }
 
     override fun close() {
         synchronized(lock) {
@@ -209,6 +342,10 @@ internal object Libc {
     internal const val SIGKILL: Int = 9
     internal const val SIGTERM: Int = 15
 
+    // Common Linux (x86-64 / arm64) values for the stop/continue signals.
+    internal const val SIGSTOP: Int = 19
+    internal const val SIGCONT: Int = 18
+
     private val linker: Linker = Linker.nativeLinker()
 
     private val killHandle: MethodHandle =
@@ -220,11 +357,20 @@ internal object Libc {
             FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT),
         )
 
+    // `pid_t` is a 32-bit `int` on Linux, so narrowing the JVM `Long` pid is the
+    // faithful ABI conversion (a real pid never exceeds `Int.MAX_VALUE`).
+
     /** `kill(-pgid, signal)` — signal the whole process group led by [pgid]. */
     internal fun killGroup(
         pgid: Long,
         signal: Int,
     ): Int = killHandle.invoke(-pgid.toInt(), signal) as Int
+
+    /** `kill(pid, signal)` — signal a single process. */
+    internal fun killProcess(
+        pid: Long,
+        signal: Int,
+    ): Int = killHandle.invoke(pid.toInt(), signal) as Int
 }
 
 /** Minimal kernel32 (Win32 Job Object) bindings. */

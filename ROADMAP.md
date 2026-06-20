@@ -394,11 +394,13 @@ Effort in parentheses. The **lean-core / 0.1** boundary is marked.
 
 **— Rust feature flags, mapped to Kotlin (each always-compiled, runtime/DI-gated) —**
 
-9. **process-control** *(M)* — `Signal` + `ProcessGroup.{signal, suspend, resume,
-   members, adopt}`. Default-on in the crate; in Kotlin just methods, throwing
-   `ProcessException.Unsupported` where a platform can't deliver (e.g. arbitrary
-   signals on Windows; suspend/resume via `cgroup.freeze` / `SIGSTOP`-`SIGCONT` /
-   Windows per-thread).
+9. **process-control** *(M)* — **done** (`Signal` + `ProcessGroup.{signal,
+   suspend, resume, members, adopt}`, throwing `ProcessException.Unsupported`
+   where a platform can't deliver). Unix: any signal, `SIGSTOP`/`SIGCONT`
+   suspend/resume, members = group leaders + adopted. Windows: `signal(Kill)`,
+   `adopt` (Job assignment), members = spawned roots + live descendants.
+   *Deferred to 9b:* Windows `suspend`/`resume` (per-thread enumeration) and
+   kernel-authoritative Windows `members` (`QueryInformationJobObject`).
 10. **stats** *(M)* — group + per-run resource metrics, `sampleStats` series
     (`Flow`), per-run `profile`. Counters via FFM (no heavy dependency); likely a
     small subpackage for surface clarity, not a module split.

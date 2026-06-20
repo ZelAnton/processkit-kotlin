@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Process-control on `ProcessGroup`: `signal(Signal)` (broadcast a `Signal` to the
+  whole tree — any signal on Unix; only `Signal.Kill` on Windows, else
+  `ProcessException.Unsupported`), `suspend()` / `resume()` (freeze/thaw the tree
+  via `SIGSTOP`/`SIGCONT` on Unix; Windows deferred), `members()` (a snapshot of
+  the group's pids), and `adopt(process)` (bring an externally-started process
+  under the group). New `Signal` type and `ProcessException.Unsupported`.
 - `CliClient` — a reusable core for typed CLI wrappers (`git`/`jj`/`gh`/…): owns
   the program, a `ProcessRunner`, and client-wide defaults (`defaultTimeout` /
   `defaultEnv`); builds preconfigured commands (`command` / `commandIn`); and

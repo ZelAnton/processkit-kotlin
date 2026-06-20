@@ -53,4 +53,13 @@ public abstract class ProcessException internal constructor(
         public val program: String,
         public val timeout: Duration,
     ) : ProcessException("`$program` was not ready within $timeout")
+
+    /**
+     * A process-control [operation] is not supported on this platform — e.g. a
+     * non-[Signal.Kill] signal, or [ProcessGroup.suspend]/[resume][ProcessGroup.resume],
+     * on Windows.
+     */
+    public class Unsupported internal constructor(
+        public val operation: String,
+    ) : ProcessException("operation not supported on this platform: $operation")
 }
