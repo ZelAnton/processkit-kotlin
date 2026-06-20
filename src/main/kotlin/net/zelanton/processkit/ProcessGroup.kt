@@ -46,7 +46,14 @@ public class ProcessGroup :
      */
     public suspend fun start(command: Command): RunningProcess {
         val process = withContext(Dispatchers.IO) { containment.spawnChecked(command) }
-        return RunningProcess(process, containment, ownsContainer = false, command.timeoutOrNull, command.stdinSource)
+        return RunningProcess(
+            process,
+            command.program,
+            containment,
+            ownsContainer = false,
+            command.timeoutOrNull,
+            command.stdinSource,
+        )
     }
 
     /**

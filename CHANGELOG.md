@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Readiness probes on `RunningProcess`: `waitForLine` (until a stdout line
+  matches), `waitForPort` (until a TCP port accepts), and `waitUntil` (a custom
+  check) — each throwing the new `ProcessException.NotReady` (distinct from
+  `Timeout`) on the deadline, without killing the child.
 - `Supervisor` — keeps a command alive: restart policies (`ALWAYS` / `ON_CRASH` /
   `NEVER`), bounded restarts, exponential backoff with jitter, a `stopWhen`
   condition, and a pluggable runner; returns a `SupervisionOutcome` (`StopReason`).

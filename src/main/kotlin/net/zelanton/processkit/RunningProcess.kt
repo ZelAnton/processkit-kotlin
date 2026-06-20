@@ -8,13 +8,20 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import net.zelanton.processkit.internal.Containment
+import java.io.IOException
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * A live handle on a started child — stream its output, then collect the outcome.
@@ -33,6 +40,7 @@ import kotlin.time.Duration
  */
 public class RunningProcess internal constructor(
     private val process: Process,
+    private val program: String,
     private val container: Containment,
     private val ownsContainer: Boolean,
     timeout: Duration?,
@@ -109,6 +117,69 @@ public class RunningProcess internal constructor(
         return process.exitValue()
     }
 
+    /**
+     * Wait until a stdout line matches [predicate] and return it. Consumes stdout
+     * up to the match (continue with [finish]). Throws [ProcessException.NotReady]
+     * if the deadline passes or stdout closes without a match; does not kill the
+     * child.
+     */
+    public suspend fun waitForLine(
+        timeout: Duration,
+        predicate: (String) -> Boolean,
+    ): String =
+        withTimeoutOrNull(timeout) { stdoutLines().firstOrNull(predicate) }
+            ?: throw ProcessException.NotReady(program, timeout)
+
+    /**
+     * Wait until [address] accepts a TCP connection. Throws
+     * [ProcessException.NotReady] on the deadline; does not kill the child.
+     */
+    public suspend fun waitForPort(
+        address: InetSocketAddress,
+        timeout: Duration,
+    ) {
+        val ready =
+            withTimeoutOrNull(timeout) {
+                while (!canConnect(address)) {
+                    delay(PROBE_POLL_INTERVAL)
+                }
+                true
+            }
+        if (ready == null) {
+            throw ProcessException.NotReady(program, timeout)
+        }
+    }
+
+    /**
+     * Wait until [check] returns `true`. Throws [ProcessException.NotReady] on the
+     * deadline; does not kill the child.
+     */
+    public suspend fun waitUntil(
+        timeout: Duration,
+        check: suspend () -> Boolean,
+    ) {
+        val ready =
+            withTimeoutOrNull(timeout) {
+                while (!check()) {
+                    delay(PROBE_POLL_INTERVAL)
+                }
+                true
+            }
+        if (ready == null) {
+            throw ProcessException.NotReady(program, timeout)
+        }
+    }
+
+    private suspend fun canConnect(address: InetSocketAddress): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                Socket().use { it.connect(address, CONNECT_TIMEOUT.inWholeMilliseconds.toInt()) }
+                true
+            } catch (failure: IOException) {
+                false
+            }
+        }
+
     /** Hard-kill the child's tree and release resources. */
     override fun close() {
         try {
@@ -128,5 +199,10 @@ public class RunningProcess internal constructor(
             process.descendants().forEach { it.destroyForcibly() }
             process.destroyForcibly()
         }
+    }
+
+    private companion object {
+        private val PROBE_POLL_INTERVAL = 50.milliseconds
+        private val CONNECT_TIMEOUT = 250.milliseconds
     }
 }

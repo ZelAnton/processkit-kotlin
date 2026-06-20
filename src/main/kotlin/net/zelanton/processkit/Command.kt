@@ -116,7 +116,7 @@ public class Command(
                 containment.close()
                 throw failure
             }
-        return RunningProcess(process, containment, ownsContainer = true, timeoutOrNull, stdinSource)
+        return RunningProcess(process, program, containment, ownsContainer = true, timeoutOrNull, stdinSource)
     }
 
     /** Start a shell-free pipeline: this command's stdout feeds [next]'s stdin. */

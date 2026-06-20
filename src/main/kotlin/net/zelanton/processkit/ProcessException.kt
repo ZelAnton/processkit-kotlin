@@ -47,4 +47,10 @@ public abstract class ProcessException internal constructor(
         public val program: String,
         cause: Throwable,
     ) : ProcessException("failed to start `$program`: ${cause.message}", cause)
+
+    /** A readiness probe did not pass within its deadline. Distinct from [Timeout]. */
+    public class NotReady internal constructor(
+        public val program: String,
+        public val timeout: Duration,
+    ) : ProcessException("`$program` was not ready within $timeout")
 }
