@@ -77,16 +77,17 @@ tasks.test {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
-// Supply-chain hygiene: ktlint 1.5.0 pulls logback 1.3.14 (CVE-2024-12798 /
-// CVE-2024-12801). Force the patched 1.3.x onto ktlint's own classpath only —
-// logback is a build-tool dependency, never on the library's compile/runtime
-// classpath and never shipped in the published artifact. Remove this once a
-// ktlint release brings a patched logback.
+// Supply-chain hygiene: ktlint pulls a vulnerable logback (GHSA-25qh-j22f-pwp8,
+// GHSA-qqpg-mvqg-649v). The low-severity fix lands only on the 1.5.x line, so
+// force logback 1.5.x onto ktlint's own classpath only — logback is a build-tool
+// dependency, never on the library's compile/runtime classpath and never shipped
+// in the published artifact. Remove this once a ktlint release brings a patched
+// logback.
 configurations.matching { it.name.startsWith("ktlint") }.configureEach {
     resolutionStrategy {
         force(
-            "ch.qos.logback:logback-classic:1.3.15",
-            "ch.qos.logback:logback-core:1.3.15",
+            "ch.qos.logback:logback-classic:1.5.25",
+            "ch.qos.logback:logback-core:1.5.25",
         )
     }
 }
