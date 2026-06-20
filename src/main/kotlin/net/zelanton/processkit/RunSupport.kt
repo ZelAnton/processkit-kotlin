@@ -1,12 +1,15 @@
 package net.zelanton.processkit
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.future.await
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import net.zelanton.processkit.internal.Containment
 import java.io.IOException
+import java.nio.file.Files
 import kotlin.time.Duration
 
 /** Create a fresh private containment, mapping a creation failure to a typed error. */
@@ -44,10 +47,12 @@ internal suspend fun captureRun(
     process: Process,
     program: String,
     timeout: Duration?,
+    stdin: Stdin,
     killRun: () -> Unit,
 ): ProcessResult<ByteArray> =
     withContext(Dispatchers.IO) {
         try {
+            applyStdin(this, process, stdin)
             val stdout = async { process.inputStream.readBytes() }
             val stderr = async { process.errorStream.readBytes() }
             val timedOut = awaitProcessExit(process, timeout, killRun)
@@ -80,6 +85,31 @@ private suspend fun awaitProcessExit(
     onTimeout()
     process.onExit().await()
     return true
+}
+
+/**
+ * Apply the [stdin] source: close the pipe (EOF), or write bytes / a file to it
+ * on a background coroutine. A broken pipe (a child that stops reading) is
+ * tolerated.
+ */
+internal fun applyStdin(
+    scope: CoroutineScope,
+    process: Process,
+    stdin: Stdin,
+) {
+    when (stdin) {
+        Stdin.None -> runCatching { process.outputStream.close() }
+        is Stdin.Bytes ->
+            scope.launch {
+                runCatching { process.outputStream.use { it.write(stdin.data) } }
+            }
+        is Stdin.FromFile ->
+            scope.launch {
+                runCatching {
+                    process.outputStream.use { out -> Files.newInputStream(stdin.path).use { it.copyTo(out) } }
+                }
+            }
+    }
 }
 
 private fun IOException.isProgramNotFound(): Boolean {

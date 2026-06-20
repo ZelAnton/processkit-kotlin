@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `Stdin` + `Command.stdin(...)` — feed a command's standard input from a string,
+  bytes, or a file. The default closes stdin (EOF) so a stdin-reading child can't
+  block forever.
 - `RunningProcess` (via `Command.start()` / `ProcessGroup.start()`) — a live
   handle for streaming: `stdoutLines(): Flow<String>`, background stderr capture,
   a `timeout` watchdog that bounds the stream, and `finish(): Finished`. It is

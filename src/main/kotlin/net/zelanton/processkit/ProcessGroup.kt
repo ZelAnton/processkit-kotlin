@@ -36,7 +36,7 @@ public class ProcessGroup :
 
     override suspend fun execute(command: Command): ProcessResult<ByteArray> {
         val process = withContext(Dispatchers.IO) { containment.spawnChecked(command) }
-        return captureRun(process, command.program, command.timeoutOrNull) { killSubtree(process) }
+        return captureRun(process, command.program, command.timeoutOrNull, command.stdinSource) { killSubtree(process) }
     }
 
     /**
@@ -46,7 +46,7 @@ public class ProcessGroup :
      */
     public suspend fun start(command: Command): RunningProcess {
         val process = withContext(Dispatchers.IO) { containment.spawnChecked(command) }
-        return RunningProcess(process, containment, ownsContainer = false, command.timeoutOrNull)
+        return RunningProcess(process, containment, ownsContainer = false, command.timeoutOrNull, command.stdinSource)
     }
 
     /**

@@ -17,7 +17,12 @@ public object JobRunner : ProcessRunner {
         val containment = newContainment(command.program)
         try {
             val process = withContext(Dispatchers.IO) { containment.spawnChecked(command) }
-            return captureRun(process, command.program, command.timeoutOrNull) { containment.killAll() }
+            return captureRun(
+                process,
+                command.program,
+                command.timeoutOrNull,
+                command.stdinSource,
+            ) { containment.killAll() }
         } finally {
             // Kill-on-close: reaps the tree on success, timeout, and cancellation.
             containment.close()

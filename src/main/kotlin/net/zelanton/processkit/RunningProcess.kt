@@ -36,6 +36,7 @@ public class RunningProcess internal constructor(
     private val container: Containment,
     private val ownsContainer: Boolean,
     timeout: Duration?,
+    stdin: Stdin,
 ) : AutoCloseable {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val stderrCapture: Deferred<ByteArray> = scope.async { process.errorStream.readBytes() }
@@ -45,6 +46,7 @@ public class RunningProcess internal constructor(
     private var timedOut = false
 
     init {
+        applyStdin(scope, process, stdin)
         if (timeout != null) {
             scope.launch {
                 delay(timeout)

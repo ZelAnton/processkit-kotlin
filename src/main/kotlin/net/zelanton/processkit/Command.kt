@@ -33,6 +33,8 @@ public class Command(
         private set
     internal var timeoutOrNull: Duration? = null
         private set
+    internal var stdinSource: Stdin = Stdin.None
+        private set
 
     internal val commandLine: List<String> get() =
         buildList {
@@ -75,6 +77,12 @@ public class Command(
      */
     public fun timeout(duration: Duration): Command = apply { timeoutOrNull = duration }
 
+    /**
+     * Feed the child's standard input from [source]. The default
+     * ([Stdin.none]) closes stdin, so a stdin-reading child sees EOF.
+     */
+    public fun stdin(source: Stdin): Command = apply { stdinSource = source }
+
     /** Require a zero exit and return trimmed stdout. */
     public suspend fun run(): String = JobRunner.run(this)
 
@@ -108,7 +116,7 @@ public class Command(
                 containment.close()
                 throw failure
             }
-        return RunningProcess(process, containment, ownsContainer = true, timeoutOrNull)
+        return RunningProcess(process, containment, ownsContainer = true, timeoutOrNull, stdinSource)
     }
 
     override fun toString(): String = "Command(${commandLine.joinToString(" ")})"
