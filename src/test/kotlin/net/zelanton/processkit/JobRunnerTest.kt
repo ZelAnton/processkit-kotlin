@@ -59,7 +59,7 @@ class JobRunnerTest {
         }
 
     @Test
-    fun `run throws Exit on a non-zero exit`() =
+    fun `run throws Exit on a non-zero exit`(): Unit =
         runBlocking {
             assumeSupported()
             assertFailsWith<ProcessException.Exit> { shell("exit 7").run() }
@@ -113,7 +113,7 @@ class JobRunnerTest {
         }
 
     @Test
-    fun `a missing program is reported as NotFound`() =
+    fun `a missing program is reported as NotFound`(): Unit =
         runBlocking {
             // Uniform NotFound on Unix needs the posix_spawn backend (the setsid
             // launcher masks the exec failure as an exit code), so assert on Windows.

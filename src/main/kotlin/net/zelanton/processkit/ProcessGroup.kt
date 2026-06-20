@@ -97,10 +97,16 @@ public class ProcessGroup(
      * Suspend (freeze) every process in the group — `SIGSTOP` to each group on
      * Unix; on Windows, every thread of every member process is suspended (Windows
      * has no process-level freeze). Best-effort and not atomic: a process or thread
-     * created mid-call may be missed. A suspended tree can still be hard-killed
-     * ([close]); a graceful [shutdown] cannot make progress until the tree is
-     * [resume]d first. Each [suspend] needs a matching [resume] (Windows tracks a
-     * per-thread suspend count).
+     * created mid-call may be missed, and if a thread fails mid-walk the call throws
+     * after attempting the rest — leaving the tree *partially* suspended (not rolled
+     * back; [resume] only inverts a matched [suspend], so [close] to recover). A
+     * suspended tree can still be hard-killed ([close]); a graceful [shutdown]
+     * cannot make progress until the tree is [resume]d first. On Windows each
+     * [suspend] needs a matching [resume] (per-thread suspend counts; on Unix
+     * `SIGCONT` thaws regardless of depth).
+     *
+     * Blocks the calling thread (on Windows, while walking the OS thread table); a
+     * closed group is a no-op. From a coroutine, call within `withContext(Dispatchers.IO)`.
      */
     public fun suspend() {
         log.debug("group: suspend ({})", containment.mechanism)
@@ -122,9 +128,8 @@ public class ProcessGroup(
      * each; descendants are contained but not enumerated). On Windows it is
      * kernel-authoritative — every pid the Job Object reports in the tree.
      *
-     * [members], [suspend], and [resume] require an open group: they throw
-     * `IllegalStateException` after [close] (unlike [signal]/[close], which are
-     * idempotent no-ops once closed).
+     * A closed group reports no members (empty) and [suspend]/[resume] are no-ops —
+     * consistent with [signal]/[close] being idempotent once closed.
      */
     public fun members(): List<Long> = containment.members()
 

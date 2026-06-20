@@ -40,7 +40,7 @@ class InteractiveStdinTest {
         }
 
     @Test
-    fun `takeStdin is null without keepStdinOpen`() =
+    fun `takeStdin is null without keepStdinOpen`(): Unit =
         runBlocking {
             assumeSupported()
             Command("sort").start().use { run ->
@@ -51,7 +51,7 @@ class InteractiveStdinTest {
         }
 
     @Test
-    fun `takeStdin returns the writer only once`() =
+    fun `takeStdin returns the writer only once`(): Unit =
         runBlocking {
             assumeSupported()
             Command("sort").keepStdinOpen().start().use { run ->

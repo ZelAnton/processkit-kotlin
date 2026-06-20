@@ -44,7 +44,7 @@ class ProbeTest {
         }
 
     @Test
-    fun `waitForLine throws NotReady when the line never appears`() =
+    fun `waitForLine throws NotReady when the line never appears`(): Unit =
         runBlocking {
             assumeSupported()
             val command =
@@ -91,7 +91,7 @@ class ProbeTest {
         }
 
     @Test
-    fun `waitForPort throws NotReady for a closed port`() =
+    fun `waitForPort throws NotReady for a closed port`(): Unit =
         runBlocking {
             assumeSupported()
             val freePort = ServerSocket(0, 50, InetAddress.getLoopbackAddress()).use { it.localPort }
@@ -103,7 +103,7 @@ class ProbeTest {
         }
 
     @Test
-    fun `waitUntil passes and times out`() =
+    fun `waitUntil passes and times out`(): Unit =
         runBlocking {
             assumeSupported()
             longRunning().start().use { run ->

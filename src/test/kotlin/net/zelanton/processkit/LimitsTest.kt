@@ -32,7 +32,7 @@ class LimitsTest {
         }
 
     @Test
-    fun `the process-group backend rejects any limit`() =
+    fun `the process-group backend rejects any limit`(): Unit =
         runBlocking {
             assumeUnix()
             assertFailsWith<ProcessException.ResourceLimit> { ProcessGroup(ResourceLimits(maxProcesses = 4)) }
@@ -44,14 +44,14 @@ class LimitsTest {
         }
 
     @Test
-    fun `cpuQuota is not yet enforced and fails fast`() =
+    fun `cpuQuota is not yet enforced and fails fast`(): Unit =
         runBlocking {
             assumeSupported()
             assertFailsWith<ProcessException.ResourceLimit> { ProcessGroup(ResourceLimits(cpuQuota = 0.5)) }
         }
 
     @Test
-    fun `Windows enforces a max-process cap`() =
+    fun `Windows enforces a max-process cap`(): Unit =
         runBlocking {
             assumeWindows()
             ProcessGroup(ResourceLimits(maxProcesses = 1)).use { group ->
@@ -64,7 +64,7 @@ class LimitsTest {
         }
 
     @Test
-    fun `Windows accepts a memory cap`() =
+    fun `Windows accepts a memory cap`(): Unit =
         runBlocking {
             assumeWindows()
             ProcessGroup(ResourceLimits(memoryMax = 256L * 1024 * 1024)).use { group ->

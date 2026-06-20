@@ -50,7 +50,7 @@ class OutputEventsTest {
         }
 
     @Test
-    fun `outputEvents and stdoutLines are mutually exclusive`() =
+    fun `outputEvents and stdoutLines are mutually exclusive`(): Unit =
         runBlocking {
             assumeSupported()
             outAndErr().start().use { run ->
@@ -60,7 +60,7 @@ class OutputEventsTest {
         }
 
     @Test
-    fun `outputEvents after a stderr-draining verb fails loud, not double-reads`() =
+    fun `outputEvents after a stderr-draining verb fails loud, not double-reads`(): Unit =
         runBlocking {
             assumeSupported()
             outAndErr().start().use { run ->

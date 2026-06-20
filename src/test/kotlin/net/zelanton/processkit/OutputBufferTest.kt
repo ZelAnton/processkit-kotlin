@@ -119,7 +119,7 @@ class OutputBufferTest {
         }
 
     @Test
-    fun `failLoud rejects a flooding real run`() =
+    fun `failLoud rejects a flooding real run`(): Unit =
         runBlocking {
             assumeSupported()
             assertFailsWith<ProcessException.OutputTooLarge> {

@@ -42,7 +42,7 @@ class StatsTest {
         }
 
     @Test
-    fun `stats reports cpu and memory on Windows`() =
+    fun `stats reports cpu and memory on Windows`(): Unit =
         runBlocking {
             assumeWindows()
             ProcessGroup().use { group ->

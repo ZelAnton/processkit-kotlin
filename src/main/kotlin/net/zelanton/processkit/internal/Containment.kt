@@ -332,25 +332,24 @@ internal class WindowsJobContainment(
     // Suspend/resume the whole tree by walking a thread snapshot and Suspend/
     // ResumeThread-ing every thread owned by a member pid (Windows has no
     // process-level freeze). Held under the lock so close() can't free the job
-    // handle mid-walk.
+    // handle mid-walk; a closed group is a trivial no-op (like killAll/signal, and
+    // like the process-group backend, which has no live members once reaped).
     override fun suspendAll(): Unit =
         synchronized(lock) {
-            check(!closed) { "process group is closed" }
-            Win32.suspendOrResumeMembers(job, suspend = true)
+            if (!closed) Win32.suspendOrResumeMembers(job, suspend = true)
         }
 
     override fun resumeAll(): Unit =
         synchronized(lock) {
-            check(!closed) { "process group is closed" }
-            Win32.suspendOrResumeMembers(job, suspend = false)
+            if (!closed) Win32.suspendOrResumeMembers(job, suspend = false)
         }
 
     // Kernel-authoritative: the pids the Job Object itself reports (whole tree),
-    // not an approximation from the spawned roots' live descendants.
+    // not an approximation from the spawned roots' live descendants. A closed group
+    // has no members (empty), matching the process-group backend.
     override fun members(): List<Long> =
         synchronized(lock) {
-            check(!closed) { "process group is closed" }
-            Win32.jobMemberPids(job)
+            if (closed) emptyList() else Win32.jobMemberPids(job)
         }
 
     override fun adopt(pid: Long) {
@@ -813,7 +812,7 @@ internal object Win32 {
                 }
                 firstError?.let { throw it }
             } finally {
-                closeHandleFn.invoke(snapshot) as Int
+                runCatching { closeHandleFn.invoke(snapshot) as Int } // never mask the walk's error
             }
         }
     }
@@ -842,7 +841,7 @@ internal object Win32 {
                     throw IOException("$verb(tid=$tid) failed (GetLastError=${lastError(capture2)})")
                 }
             } finally {
-                closeHandleFn.invoke(thread) as Int
+                runCatching { closeHandleFn.invoke(thread) as Int } // never mask the suspend/resume error
             }
         }
 
