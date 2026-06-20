@@ -380,12 +380,17 @@ Effort in parentheses. The **lean-core / 0.1** boundary is marked.
 7. **Retry** *(S)* — `Command.retry`: replay one run to success — classifier +
    fixed backoff between tries (distinct from Supervision's keep-alive, which owns
    the jittered exponential backoff). `RetryWhen` ships ready-made classifiers.
-8. **CliClient + test doubles** *(M)* — `CliClient` reusable typed-wrapper core;
-   formalize the doubles on the `ProcessRunner` seam: `ScriptedRunner` (canned
-   replies, drives streaming too) + `RecordingRunner` (input assertions).
-   Hand-written, idiomatic Kotlin DI — **no** MockK-generated runner shipped
-   (this is the crate's `mock` feature, intentionally dropped; consumers add
-   MockK themselves if they want expectation-style mocking).
+8. **CliClient + test doubles** *(M)* — **done** for the bulk seam: `CliClient`
+   typed-wrapper core (defaults, `command`/`commandIn`, run verbs + `parse`,
+   accepting an arg list or a `Command`); `RecordingRunner` + `Invocation` (input
+   assertions, redacted `toString`). Hand-written, idiomatic Kotlin DI — **no**
+   MockK-generated runner shipped (the crate's `mock` feature, intentionally
+   dropped; consumers add MockK themselves for expectation-style mocking).
+   *Deferred to 8b (with the streaming seam):* `start()` on the `ProcessRunner`
+   seam so `ScriptedRunner` drives streaming too (a fakeable `RunningProcess`,
+   line-delay, pending/cancel replies); sequenced replies (`onSequence` —
+   fail-then-succeed) for retry tests; `CliClient.firstLine`; and
+   `CliClient.defaultEnvRemove` (needs single-var env removal on `Command`).
 
 **— Rust feature flags, mapped to Kotlin (each always-compiled, runtime/DI-gated) —**
 

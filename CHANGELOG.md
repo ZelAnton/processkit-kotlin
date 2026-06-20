@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `CliClient` — a reusable core for typed CLI wrappers (`git`/`jj`/`gh`/…): owns
+  the program, a `ProcessRunner`, and client-wide defaults (`defaultTimeout` /
+  `defaultEnv`); builds preconfigured commands (`command` / `commandIn`); and
+  offers every run verb plus `parse`, each accepting an arg list or a ready-made
+  `Command`. Compose it into a typed facade — no codegen needed.
+- `RecordingRunner` + `Invocation` — a test double that records every command
+  (program, args, working dir, env, stdin presence) before delegating, with
+  `calls` / `onlyCall()` / `hasFlag` for input assertions; `toString` redacts
+  argv and env values.
+- `parse` — a verb on `Command`, `ProcessRunner`, and `CliClient` that requires a
+  zero exit and feeds the untrimmed stdout to a transform (a throwing transform
+  propagates; the run honors `retry`, the transform is not retried).
 - `Command.retry(maxAttempts, backoff, retryIf)` — replay one run to success: the
   success-checking verbs (`run` / `runUnit` / `exitCode` / `probe`) re-execute a
   fresh process while a classifier accepts the `ProcessException`, sleeping a fixed

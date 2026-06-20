@@ -145,6 +145,13 @@ public class Command(
     public suspend fun probe(): Boolean = JobRunner.probe(this)
 
     /**
+     * Require a zero exit and feed the (untrimmed) stdout to [transform] — for
+     * struct-returning commands. A throwing [transform] propagates; the run honors
+     * this command's [retry] policy but a [transform] failure is not retried.
+     */
+    public suspend fun <T> parse(transform: (String) -> T): T = JobRunner.parse(this, transform)
+
+    /**
      * Start the command and return a live [RunningProcess] for streaming. The
      * run lives in its own kill-on-close container; `use { }` the handle so a
      * dropped or cancelled run reaps the tree.
@@ -164,6 +171,18 @@ public class Command(
 
     /** Start a shell-free pipeline: this command's stdout feeds [next]'s stdin. */
     public fun pipe(next: Command): Pipeline = Pipeline(this, next)
+
+    /** An independent copy of this command — mutating either does not affect the other. */
+    internal fun copy(): Command {
+        val clone = Command(program, *argumentList.toTypedArray())
+        clone.workingDirectory = workingDirectory
+        clone.environment.putAll(environment)
+        clone.environmentCleared = environmentCleared
+        clone.timeoutOrNull = timeoutOrNull
+        clone.stdinSource = stdinSource
+        clone.retryPolicy = retryPolicy
+        return clone
+    }
 
     override fun toString(): String = "Command(${commandLine.joinToString(" ")})"
 }

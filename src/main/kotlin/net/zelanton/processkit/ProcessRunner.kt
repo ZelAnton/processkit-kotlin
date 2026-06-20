@@ -77,5 +77,19 @@ public suspend fun ProcessRunner.probe(command: Command): Boolean =
         }
     }
 
+/**
+ * Require success and feed the captured (untrimmed) stdout to [transform] — the
+ * building block for typed CLI wrappers. Honors the command's
+ * [retry][Command.retry] policy for the run; a throwing [transform] (the
+ * fallible-parse case) propagates and is not retried.
+ */
+public suspend fun <T> ProcessRunner.parse(
+    command: Command,
+    transform: (String) -> T,
+): T {
+    val stdout = retrying(command) { outputString(command).ensureSuccess().stdout }
+    return transform(stdout)
+}
+
 /** Normalize captured text to `\n` line endings (CRLF and lone CR → LF). */
 internal fun String.normalizeNewlines(): String = replace("\r\n", "\n").replace('\r', '\n')
