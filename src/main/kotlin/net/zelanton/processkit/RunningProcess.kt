@@ -56,6 +56,7 @@ public class RunningProcess internal constructor(
     stdin: Stdin,
     private val stdoutCharset: Charset = Charsets.UTF_8,
     private val stderrCharset: Charset = Charsets.UTF_8,
+    private val keepStdinOpen: Boolean = false,
 ) : AutoCloseable {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val stderrCapture: Deferred<ByteArray> = scope.async { process.errorStream.readBytes() }
@@ -64,11 +65,19 @@ public class RunningProcess internal constructor(
     private val finishResult = CompletableDeferred<Finished>()
     private val closed = AtomicBoolean(false)
 
+    // Claimed when the writer is taken OR when finish/waitFor auto-closes an
+    // untaken stdin — one CAS makes those two outcomes mutually exclusive.
+    private val stdinClaimed = AtomicBoolean(false)
+
     @Volatile
     private var timedOut = false
 
     init {
-        applyStdin(scope, process, stdin)
+        // With keepStdinOpen the caller owns stdin (via takeStdin), so leave the
+        // pipe open and don't apply any stdin source.
+        if (!keepStdinOpen) {
+            applyStdin(scope, process, stdin)
+        }
         if (timeout != null) {
             scope.launch {
                 delay(timeout)
@@ -85,6 +94,26 @@ public class RunningProcess internal constructor(
 
     /** Whether the child is still running. */
     public val isAlive: Boolean get() = process.isAlive
+
+    /**
+     * Take the interactive stdin writer — non-null only if the command was built
+     * with [Command.keepStdinOpen], and only on the first call (`null` afterwards,
+     * or once [finish]/[waitFor] has auto-closed an untaken stdin). You own the
+     * returned writer: [close][ProcessStdin.close] it (EOF) when done so a
+     * stdin-reading child exits.
+     *
+     * **Consume stdout concurrently with writing.** Launch a [stdoutLines]
+     * collector before/while you write — a child that interleaves output with
+     * input (a REPL, `cat`, …) or emits more than a pipe buffer will otherwise
+     * deadlock (it blocks writing stdout while you block writing its stdin).
+     * Writing everything then reading is safe only for a child that buffers all
+     * input until EOF, like `sort`.
+     */
+    public fun takeStdin(): ProcessStdin? {
+        if (!keepStdinOpen) return null
+        if (!stdinClaimed.compareAndSet(false, true)) return null
+        return ProcessStdin(process.outputStream)
+    }
 
     /**
      * Stream stdout line by line as it arrives. The returned [Flow] is cold and
@@ -112,6 +141,7 @@ public class RunningProcess internal constructor(
     public suspend fun finish(): Finished {
         if (finishStarted.compareAndSet(false, true)) {
             try {
+                closeUntakenStdin()
                 val drain =
                     if (stdoutConsumed.compareAndSet(false, true)) {
                         scope.async { runCatching { process.inputStream.readBytes() } }
@@ -143,8 +173,18 @@ public class RunningProcess internal constructor(
      * never return — consume stdout ([stdoutLines]/[waitForLine]) or use [finish].
      */
     public suspend fun waitFor(): Int {
+        closeUntakenStdin()
         process.onExit().await()
         return process.exitValue()
+    }
+
+    // A kept-open stdin that was never taken must be closed before waiting for exit,
+    // or a stdin-reading child blocks forever (no input, no EOF). The CAS claims
+    // stdin so this can't race a concurrent takeStdin (whichever wins decides).
+    private fun closeUntakenStdin() {
+        if (keepStdinOpen && stdinClaimed.compareAndSet(false, true)) {
+            runCatching { process.outputStream.close() }
+        }
     }
 
     /**

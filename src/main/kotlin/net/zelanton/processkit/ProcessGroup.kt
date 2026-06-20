@@ -67,6 +67,7 @@ public class ProcessGroup(
             command.stdinSource,
             command.stdoutCharset,
             command.stderrCharset,
+            command.keepStdinOpen,
         )
     }
 

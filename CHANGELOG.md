@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Interactive stdin: `Command.keepStdinOpen()` + `RunningProcess.takeStdin()` hand
+  back a `ProcessStdin` writer (`write` / `writeLine` / `flush` / `close`) so a
+  streamed child can be fed incrementally. Only affects `start()`; the bulk verbs
+  close stdin as before, and `finish` / `waitFor` close an untaken kept-open stdin
+  so a stdin-reading child can still exit.
 - Live output observation on `Command`: `onStdoutLine` / `onStderrLine` (a
   fault-isolated callback per decoded line as the capture pump reads it),
   `stdoutTee` / `stderrTee` (mirror each line to an `Appendable` — `System.out`, a

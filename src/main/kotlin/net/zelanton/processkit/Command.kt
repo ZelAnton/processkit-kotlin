@@ -55,6 +55,8 @@ public class Command(
         private set
     internal var stderrCharset: Charset = Charsets.UTF_8
         private set
+    internal var keepStdinOpen: Boolean = false
+        private set
 
     internal val commandLine: List<String> get() =
         buildList {
@@ -143,6 +145,22 @@ public class Command(
 
     /** Decode stderr with [charset] instead of UTF-8. */
     public fun stderrEncoding(charset: Charset): Command = apply { stderrCharset = charset }
+
+    /**
+     * Keep stdin open for interactive writing on a streamed run: [start] the
+     * command, then [RunningProcess.takeStdin] to feed the child incrementally.
+     * Any [stdin] source is ignored in this mode — you write the input yourself.
+     *
+     * Only affects [start]; the bulk verbs still close stdin (so combining this
+     * with `run`/`outputString`/… without streaming is equivalent to not setting
+     * it). On a streamed run that never takes the writer, [RunningProcess.finish] /
+     * [RunningProcess.waitFor] close stdin so a stdin-reading child can still exit.
+     *
+     * For an *interactive* child (one that interleaves output with input), consume
+     * stdout concurrently with writing — see [RunningProcess.takeStdin] — or it can
+     * deadlock.
+     */
+    public fun keepStdinOpen(): Command = apply { keepStdinOpen = true }
 
     /**
      * Retry the run while [retryIf] accepts the failure, up to [maxAttempts] total
@@ -236,6 +254,7 @@ public class Command(
         clone.stderrTeeSink = stderrTeeSink
         clone.stdoutCharset = stdoutCharset
         clone.stderrCharset = stderrCharset
+        clone.keepStdinOpen = keepStdinOpen
         return clone
     }
 

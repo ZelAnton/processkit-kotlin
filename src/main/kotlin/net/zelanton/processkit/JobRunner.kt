@@ -48,6 +48,7 @@ public object JobRunner : ProcessRunner {
             command.stdinSource,
             command.stdoutCharset,
             command.stderrCharset,
+            command.keepStdinOpen,
         )
     }
 }

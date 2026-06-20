@@ -365,8 +365,9 @@ Effort in parentheses. The **lean-core / 0.1** boundary is marked.
    and `waitFor` / `waitAny` / `waitAll`. **3d done:** `onStdoutLine` /
    `onStderrLine` handlers (fault-isolated), `stdoutTee` / `stderrTee`, and
    `stdoutEncoding` / `stderrEncoding` — the live output-observation pump (bulk
-   verbs + scripted replay). *Remaining (3e/3f):* interactive stdin writer
-   (`keepStdinOpen`), buffer policy + overflow, merged `outputEvents()`.
+   verbs + scripted replay). **3e done:** interactive stdin (`keepStdinOpen` +
+   `RunningProcess.takeStdin` → `ProcessStdin`). *Remaining (3f):* output buffer
+   policy + overflow, merged `outputEvents()`.
    **← lean-core / 0.1 boundary**
 
 **— Demand-ordered core (still flag-less in Rust; order by real need) —**
