@@ -25,6 +25,16 @@ class StreamingSeamTest {
         }
 
     @Test
+    fun `scripted streaming honors stdoutEncoding`() =
+        runTest {
+            // 0xE9 = 'é' in ISO-8859-1, an invalid standalone UTF-8 byte.
+            val runner = ScriptedRunner().fallback(Reply.okBytes(byteArrayOf(0xE9.toByte(), '\n'.code.toByte())))
+            runner.start(Command("x").stdoutEncoding(Charsets.ISO_8859_1)).use { run ->
+                assertEquals(listOf("é"), run.stdoutLines().toList())
+            }
+        }
+
+    @Test
     fun `scripted finish reports the canned exit and stderr`() =
         runTest {
             val runner = ScriptedRunner().fallback(Reply.fail(7, "boom\n"))

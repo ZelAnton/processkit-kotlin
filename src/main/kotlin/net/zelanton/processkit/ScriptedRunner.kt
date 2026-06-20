@@ -94,6 +94,8 @@ public class ScriptedRunner : ProcessRunner {
             ownsContainer = false,
             command.timeoutOrNull,
             command.stdinSource,
+            command.stdoutCharset,
+            command.stderrCharset,
         )
     }
 

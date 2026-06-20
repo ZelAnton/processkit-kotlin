@@ -123,6 +123,10 @@ public class Command(
      * capture *and* mirror it (e.g. to `System.out`, a file `Writer`, or a
      * `StringBuilder`). Fires independently of [onStdoutLine]. A [sink] that throws
      * is disabled for the rest of the run; capture is unaffected.
+     *
+     * Like [onStdoutLine], this fires on the capturing verbs only (a streamed run
+     * observes via [RunningProcess.stdoutLines]). The library serializes appends to
+     * [sink], so one sink shared by both [stdoutTee] and [stderrTee] is safe.
      */
     public fun stdoutTee(sink: Appendable): Command = apply { stdoutTeeSink = sink }
 
@@ -207,9 +211,10 @@ public class Command(
     public suspend fun start(): RunningProcess = JobRunner.start(this)
 
     /**
-     * Stream stdout and return the first line matching [predicate] (or `null` if
-     * the stream ends first), reaping the run when done. For scanning a finite
-     * command's output; for readiness use [RunningProcess.waitForLine].
+     * Stream stdout and return the first line matching [predicate], **then kill the
+     * run** (or `null` if the stream ends with no match). For scanning a *finite*
+     * command's output; for readiness use [RunningProcess.waitForLine] (which leaves
+     * the child running). Bound an unbounded stream with [timeout].
      */
     public suspend fun firstLine(predicate: (String) -> Boolean): String? = JobRunner.firstLine(this, predicate)
 

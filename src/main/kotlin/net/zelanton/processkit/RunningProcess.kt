@@ -19,6 +19,7 @@ import net.zelanton.processkit.internal.Containment
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.nio.charset.Charset
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -53,6 +54,8 @@ public class RunningProcess internal constructor(
     private val ownsContainer: Boolean,
     timeout: Duration?,
     stdin: Stdin,
+    private val stdoutCharset: Charset = Charsets.UTF_8,
+    private val stderrCharset: Charset = Charsets.UTF_8,
 ) : AutoCloseable {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val stderrCapture: Deferred<ByteArray> = scope.async { process.errorStream.readBytes() }
@@ -77,7 +80,7 @@ public class RunningProcess internal constructor(
         }
     }
 
-    /** The OS process id of the started child. */
+    /** The OS process id of the started child; `-1` for a scripted handle (no OS process). */
     public val pid: Long get() = process.pid()
 
     /** Whether the child is still running. */
@@ -85,12 +88,13 @@ public class RunningProcess internal constructor(
 
     /**
      * Stream stdout line by line as it arrives. The returned [Flow] is cold and
-     * single-shot — collect it once. Lines are decoded as UTF-8.
+     * single-shot — collect it once. Lines are decoded with the command's
+     * [Command.stdoutEncoding] (UTF-8 by default).
      */
     public fun stdoutLines(): Flow<String> =
         flow {
             check(stdoutConsumed.compareAndSet(false, true)) { "stdout has already been consumed" }
-            process.inputStream.bufferedReader().use { reader ->
+            process.inputStream.bufferedReader(stdoutCharset).use { reader ->
                 var line = reader.readLine()
                 while (line != null) {
                     emit(line)
@@ -116,7 +120,7 @@ public class RunningProcess internal constructor(
                     }
                 process.onExit().await()
                 drain?.await()
-                val stderr = stderrCapture.await().decodeToString().normalizeNewlines()
+                val stderr = String(stderrCapture.await(), stderrCharset).normalizeNewlines()
                 finishResult.complete(Finished(process.exitValue(), stderr, timedOut))
             } catch (failure: Throwable) {
                 killTree()
@@ -164,7 +168,7 @@ public class RunningProcess internal constructor(
         // close()/killTree closes the stream, which unblocks the read.
         scope.launch {
             runCatching {
-                process.inputStream.bufferedReader().use { reader ->
+                process.inputStream.bufferedReader(stdoutCharset).use { reader ->
                     var line = reader.readLine()
                     while (line != null) {
                         if (!matched.isCompleted && predicate(line)) {

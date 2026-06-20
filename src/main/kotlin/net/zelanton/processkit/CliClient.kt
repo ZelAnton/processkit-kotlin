@@ -156,9 +156,10 @@ public class CliClient(
     ): T = runner.parse(command(*args), transform)
 
     /**
-     * Stream stdout and return the first line matching [predicate] (or `null` if
-     * the stream ends first), reaping the run when done. For scanning a finite
-     * command's output; for readiness use [RunningProcess.waitForLine].
+     * Stream stdout and return the first line matching [predicate], **then kill the
+     * run** (or `null` if the stream ends with no match). For scanning a *finite*
+     * command's output; for readiness use [RunningProcess.waitForLine] (which leaves
+     * the child running). Bound an unbounded stream with [Command.timeout].
      */
     public suspend fun firstLine(
         command: Command,

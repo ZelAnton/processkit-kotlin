@@ -105,11 +105,15 @@ public suspend fun <T> ProcessRunner.parse(
 }
 
 /**
- * Stream [command]'s stdout and return the first line matching [predicate] (or
- * `null` if the stream ends first), then stop the run. Routes through [start], so
- * it works on any runner — including a [ScriptedRunner] in tests. Unlike
- * [RunningProcess.waitForLine] (a readiness probe that leaves the child running),
- * this is for scanning a finite command's output and reaps the run when done.
+ * Stream [command]'s stdout and return the first line matching [predicate], **then
+ * kill the run** (or return `null` if the stream ends with no match). For scanning
+ * a *finite* command's output — contrast [RunningProcess.waitForLine], a readiness
+ * probe that leaves the child running and throws on its deadline.
+ *
+ * Routes through [start], so it works on any runner (a [ScriptedRunner] in tests).
+ * It takes no deadline of its own: bound an unbounded stream with [Command.timeout]
+ * (the watchdog kills the tree, ending the stream → `null`). A [Command.retry]
+ * policy does not apply.
  */
 public suspend fun ProcessRunner.firstLine(
     command: Command,

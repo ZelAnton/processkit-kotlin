@@ -46,6 +46,8 @@ public object JobRunner : ProcessRunner {
             ownsContainer = true,
             command.timeoutOrNull,
             command.stdinSource,
+            command.stdoutCharset,
+            command.stderrCharset,
         )
     }
 }

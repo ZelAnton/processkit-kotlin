@@ -65,6 +65,8 @@ public class ProcessGroup(
             ownsContainer = false,
             command.timeoutOrNull,
             command.stdinSource,
+            command.stdoutCharset,
+            command.stderrCharset,
         )
     }
 
