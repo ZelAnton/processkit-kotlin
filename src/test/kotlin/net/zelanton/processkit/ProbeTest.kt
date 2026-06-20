@@ -55,6 +55,30 @@ class ProbeTest {
         }
 
     @Test
+    fun `waitForLine times out promptly and leaves the child running`() =
+        runBlocking {
+            assumeSupported()
+            longRunning().start().use { run ->
+                val deadline = 500.milliseconds
+                assertFailsWith<ProcessException.NotReady> {
+                    run.waitForLine(deadline) { it.contains("READY") }
+                }
+                assertTrue(run.isAlive, "a timed-out probe must not kill the child")
+            }
+        }
+
+    @Test
+    fun `waitForPort host-port overload succeeds once the port accepts`() =
+        runBlocking {
+            assumeSupported()
+            ServerSocket(0, 50, InetAddress.getLoopbackAddress()).use { server ->
+                longRunning().start().use { run ->
+                    run.waitForPort(InetAddress.getLoopbackAddress().hostAddress, server.localPort, 10.seconds)
+                }
+            }
+        }
+
+    @Test
     fun `waitForPort succeeds once the port accepts`() =
         runBlocking {
             assumeSupported()

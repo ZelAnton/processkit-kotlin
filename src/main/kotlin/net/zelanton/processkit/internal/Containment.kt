@@ -157,6 +157,8 @@ internal class WindowsJobContainment : Containment {
     override val mechanism: Mechanism = Mechanism.JOB_OBJECT
 
     private val job: MemorySegment = Win32.createKillOnCloseJob()
+    private val lock = Any()
+    private var closed = false
 
     override fun spawn(
         command: List<String>,
@@ -168,22 +170,36 @@ internal class WindowsJobContainment : Containment {
         // assigned immediately after start. The residual window (a child that
         // forks before assignment) is closed by CREATE_SUSPENDED in a later step.
         val process = newProcessBuilder(command, workingDir, environment, clearEnvironment).start()
-        Win32.assignToJob(job, process.pid())
+        try {
+            Win32.assignToJob(job, process.pid())
+        } catch (failure: Throwable) {
+            // The child was started but never joined the job, so closing the job
+            // would not reap it; kill it directly so it cannot escape containment.
+            process.destroyForcibly()
+            throw failure
+        }
         return process
     }
 
     override fun killAll() {
-        Win32.terminateJob(job)
+        synchronized(lock) {
+            if (closed) return
+            Win32.terminateJob(job)
+        }
     }
 
     // Job Objects have no graceful-stop signal; close()/killAll() is atomic.
     override fun requestStop(): Boolean = false
 
     override fun close() {
-        try {
-            Win32.terminateJob(job)
-        } finally {
-            Win32.closeHandle(job)
+        synchronized(lock) {
+            if (closed) return
+            closed = true
+            try {
+                Win32.terminateJob(job)
+            } finally {
+                Win32.closeHandle(job)
+            }
         }
     }
 }

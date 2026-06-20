@@ -11,6 +11,9 @@ import kotlinx.coroutines.withContext
  *
  * For several children that should share one container — and be reaped as a unit —
  * use a [ProcessGroup] instead.
+ *
+ * Stateless and safe to share: every call allocates its own container, so the
+ * single instance can be used from any number of coroutines at once.
  */
 public object JobRunner : ProcessRunner {
     override suspend fun execute(command: Command): ProcessResult<ByteArray> {

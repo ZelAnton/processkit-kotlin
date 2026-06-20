@@ -8,6 +8,13 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
 /**
+ * The default batch fan-out width: the number of available processors. A sensible
+ * cap for spawning local children; raise [concurrency] for IO- or network-bound
+ * commands that spend most of their time waiting.
+ */
+public val DEFAULT_CONCURRENCY: Int get() = Runtime.getRuntime().availableProcessors()
+
+/**
  * Run [commands] with at most [concurrency] alive at once, returning every
  * outcome in input order.
  *
@@ -19,14 +26,14 @@ import kotlinx.coroutines.sync.withPermit
  */
 public suspend fun outputAll(
     commands: Iterable<Command>,
-    concurrency: Int,
+    concurrency: Int = DEFAULT_CONCURRENCY,
     runner: ProcessRunner = JobRunner,
 ): List<Result<ProcessResult<String>>> = fanOut(commands, concurrency) { runner.outputString(it) }
 
 /** Like [outputAll], but each result captures stdout as raw bytes. */
 public suspend fun outputAllBytes(
     commands: Iterable<Command>,
-    concurrency: Int,
+    concurrency: Int = DEFAULT_CONCURRENCY,
     runner: ProcessRunner = JobRunner,
 ): List<Result<ProcessResult<ByteArray>>> = fanOut(commands, concurrency) { runner.outputBytes(it) }
 

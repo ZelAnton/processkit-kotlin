@@ -10,7 +10,13 @@ package net.zelanton.processkit
  * via constructor) to make code that shells out hermetically testable.
  */
 public interface ProcessRunner {
-    /** Run [command] to completion, capturing raw stdout bytes, stderr, and exit. */
+    /**
+     * Run [command] to completion, capturing raw stdout bytes, stderr, and exit.
+     *
+     * Cancelling the calling coroutine kills the child's whole tree before the
+     * `CancellationException` propagates — a cancelled run never leaks a process.
+     * A timeout is captured ([ProcessResult.timedOut]), not thrown, at this level.
+     */
     public suspend fun execute(command: Command): ProcessResult<ByteArray>
 }
 

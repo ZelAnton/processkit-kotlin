@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   matches), `waitForPort` (until a TCP port accepts), and `waitUntil` (a custom
   check) — each throwing the new `ProcessException.NotReady` (distinct from
   `Timeout`) on the deadline, without killing the child.
+- `Command(program, args: List<String>)` constructor and a
+  `RunningProcess.waitForPort(host, port, timeout)` overload for the common
+  call shapes.
+- `outputAll` / `outputAllBytes` now default `concurrency` to `DEFAULT_CONCURRENCY`
+  (the available-processor count), so the batch APIs work without picking a number.
 - `Supervisor` — keeps a command alive: restart policies (`ALWAYS` / `ON_CRASH` /
   `NEVER`), bounded restarts, exponential backoff with jitter, a `stopWhen`
   condition, and a pluggable runner; returns a `SupervisionOutcome` (`StopReason`).
@@ -50,9 +55,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`JOB_OBJECT` / `CGROUP_V2` / `PROCESS_GROUP` / `NONE`).
 
 ### Changed
--
+- `RunningProcess.waitForLine` now keeps draining stdout in the background after
+  the match (and after a timed-out wait), so a chatty child can't block on a full
+  pipe; a timed-out probe no longer pins an I/O thread on the blocking read.
 
 ### Fixed
--
+- Windows: a child that started but failed Job-Object assignment is now killed
+  instead of being orphaned outside the container.
+- `RunningProcess.finish()` is now idempotent (repeat calls return the same
+  `Finished` instead of surfacing a spurious `CancellationException`), waits for
+  the stdout drain to complete, and `close()` is now idempotent (no double
+  `CloseHandle` on Windows).
 
 [Unreleased]: https://github.com/ZelAnton/processkit-kotlin/commits/main

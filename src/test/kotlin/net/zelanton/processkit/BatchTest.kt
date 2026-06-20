@@ -44,6 +44,23 @@ class BatchTest {
         }
 
     @Test
+    fun `outputAll defaults concurrency when omitted`() =
+        runTest {
+            val runner = ScriptedRunner().fallback(Reply.ok("x"))
+            val results = outputAll(listOf(Command("a"), Command("b")), runner = runner)
+            assertEquals(2, results.size)
+            assertTrue(results.all { it.getOrThrow().stdout == "x" })
+        }
+
+    @Test
+    fun `Command accepts a List of arguments`() =
+        runTest {
+            val runner = ScriptedRunner().on("git", "log", "--oneline", reply = Reply.ok("ok"))
+            val result = runner.outputString(Command("git", listOf("log", "--oneline")))
+            assertEquals("ok", result.stdout)
+        }
+
+    @Test
     fun `outputAll rejects non-positive concurrency`() =
         runTest {
             assertFailsWith<IllegalArgumentException> {

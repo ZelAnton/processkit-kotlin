@@ -74,7 +74,8 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
-            echo "::error::Release must be dispatched from main (got: ${{ github.ref }}). Re-run with 'Use workflow from: main'."
+            echo "::error::Release must be dispatched from main (got: ${{ github.ref }})."
+            echo "::error::Re-run with 'Use workflow from: main'."
             exit 1
           fi
           echo "Dispatched from main."

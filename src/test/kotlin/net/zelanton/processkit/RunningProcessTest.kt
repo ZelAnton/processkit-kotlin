@@ -53,6 +53,18 @@ class RunningProcessTest {
         }
 
     @Test
+    fun `finish is idempotent`() =
+        runBlocking {
+            assumeSupported()
+            threeLines().start().use { run ->
+                val first = run.finish()
+                val second = run.finish()
+                assertEquals(first.exitCode, second.exitCode)
+                assertEquals(first.stderr, second.stderr)
+            }
+        }
+
+    @Test
     fun `stderr is captured in the background`() =
         runBlocking {
             assumeSupported()

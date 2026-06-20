@@ -103,7 +103,13 @@ public class Supervisor(
     /** Run each incarnation through [runner] (default [JobRunner]). */
     public fun withRunner(runner: ProcessRunner): Supervisor = apply { this.runner = runner }
 
-    /** Supervise until the policy, the restart cap, or the stop condition ends it. */
+    /**
+     * Supervise until the policy, the restart cap, or the stop condition ends it.
+     *
+     * With the defaults ([RestartPolicy.ON_CRASH] and an unbounded [maxRestarts])
+     * this suspends indefinitely while the command keeps crashing — set
+     * [maxRestarts] and/or [stopWhen] to bound it, or cancel the calling coroutine.
+     */
     public suspend fun run(): SupervisionOutcome {
         var restarts = 0
         while (true) {

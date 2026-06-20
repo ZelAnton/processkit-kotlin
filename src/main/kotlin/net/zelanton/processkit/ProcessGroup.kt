@@ -23,6 +23,9 @@ import kotlin.time.Duration.Companion.seconds
  *
  * A per-run `timeout` (or a cancelled run) kills only that child's subtree, not
  * its siblings; [close] is the guaranteed backstop for the whole tree.
+ *
+ * Safe for concurrent use: [execute] / [start] may be called from many coroutines
+ * at once, and [close] / [shutdown] are idempotent.
  */
 public class ProcessGroup :
     ProcessRunner,

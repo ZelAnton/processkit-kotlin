@@ -18,12 +18,19 @@ import kotlin.time.Duration
  *
  * The default verbs run on [JobRunner]; pass a [Command] to a [ProcessRunner]
  * (e.g. a [ScriptedRunner]) to run it through an injected seam instead.
+ *
+ * A `Command` holds mutable builder state and is **not** safe to mutate from
+ * multiple threads at once. Building then running (including running the same
+ * built command more than once) is fine; concurrent `arg`/`env` mutation is not.
  */
 public class Command(
     /** The program to run (resolved against `PATH` by the OS). */
     public val program: String,
     vararg args: String,
 ) {
+    /** Build from a program and a list of arguments. */
+    public constructor(program: String, args: List<String>) : this(program, *args.toTypedArray())
+
     private val argumentList: MutableList<String> = args.toMutableList()
     private val environment: LinkedHashMap<String, String> = LinkedHashMap()
 

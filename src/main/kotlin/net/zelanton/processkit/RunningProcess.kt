@@ -1,5 +1,6 @@
 package net.zelanton.processkit
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -8,7 +9,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.future.await
@@ -37,6 +37,12 @@ import kotlin.time.Duration.Companion.milliseconds
  * never blocks), and a [Command.timeout] is enforced by a watchdog that bounds
  * the stream. Always [close] the handle (use `use { }`): on a dropped or
  * cancelled run that is what reaps the tree.
+ *
+ * **stdout is single-shot.** Exactly one of [stdoutLines] or [waitForLine] may
+ * consume it, and [finish] drains whatever is left; a second consumer throws
+ * `IllegalStateException`. [waitFor] does *not* consume stdout — if the child is
+ * chatty, pair it with one of the consumers (or [finish]) so it cannot block on a
+ * full stdout pipe.
  */
 public class RunningProcess internal constructor(
     private val process: Process,
@@ -49,6 +55,9 @@ public class RunningProcess internal constructor(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val stderrCapture: Deferred<ByteArray> = scope.async { process.errorStream.readBytes() }
     private val stdoutConsumed = AtomicBoolean(false)
+    private val finishStarted = AtomicBoolean(false)
+    private val finishResult = CompletableDeferred<Finished>()
+    private val closed = AtomicBoolean(false)
 
     @Volatile
     private var timedOut = false
@@ -58,8 +67,10 @@ public class RunningProcess internal constructor(
         if (timeout != null) {
             scope.launch {
                 delay(timeout)
-                timedOut = true
-                killTree()
+                if (process.isAlive) {
+                    timedOut = true
+                    killTree()
+                }
             }
         }
     }
@@ -88,29 +99,42 @@ public class RunningProcess internal constructor(
 
     /**
      * Wait for the child to exit and return its outcome plus the captured stderr.
-     * If stdout was never streamed it is drained here so the child can't block on
-     * a full pipe.
+     * If stdout was never consumed it is drained here so the child can't block on
+     * a full pipe. Idempotent: every call returns the same [Finished] (or rethrows
+     * the same failure).
      */
     public suspend fun finish(): Finished {
-        try {
-            if (stdoutConsumed.compareAndSet(false, true)) {
-                scope.launch { process.inputStream.readBytes() }
+        if (finishStarted.compareAndSet(false, true)) {
+            try {
+                val drain =
+                    if (stdoutConsumed.compareAndSet(false, true)) {
+                        scope.async { runCatching { process.inputStream.readBytes() } }
+                    } else {
+                        null
+                    }
+                process.onExit().await()
+                drain?.await()
+                val stderr = stderrCapture.await().decodeToString().normalizeNewlines()
+                finishResult.complete(Finished(process.exitValue(), stderr, timedOut))
+            } catch (failure: Throwable) {
+                killTree()
+                finishResult.completeExceptionally(failure)
+                throw failure
+            } finally {
+                scope.cancel()
             }
-            process.onExit().await()
-            val stderr = stderrCapture.await().decodeToString().normalizeNewlines()
-            return Finished(process.exitValue(), stderr, timedOut)
-        } catch (failure: Throwable) {
-            killTree()
-            throw failure
-        } finally {
-            scope.cancel()
         }
+        return finishResult.await()
     }
 
     /**
      * Wait for the child to exit and return its exit code, without consuming
      * output or releasing the handle. Use [finish] to also collect stderr, or
      * [close] to release resources.
+     *
+     * This does not drain stdout, so a child that writes more than a pipe buffer
+     * of stdout and is never consumed will block before exiting and this call will
+     * never return — consume stdout ([stdoutLines]/[waitForLine]) or use [finish].
      */
     public suspend fun waitFor(): Int {
         process.onExit().await()
@@ -119,16 +143,50 @@ public class RunningProcess internal constructor(
 
     /**
      * Wait until a stdout line matches [predicate] and return it. Consumes stdout
-     * up to the match (continue with [finish]). Throws [ProcessException.NotReady]
-     * if the deadline passes or stdout closes without a match; does not kill the
-     * child.
+     * (it counts as the single-shot stdout consumer); stdout keeps draining in the
+     * background after the match so the child never blocks on a full pipe, and
+     * [finish] still collects the exit code and stderr afterwards. Throws
+     * [ProcessException.NotReady] if the deadline passes or stdout closes without a
+     * match; does not kill the child (a timed-out probe leaves it running and the
+     * stream draining — [close] the handle to stop).
      */
     public suspend fun waitForLine(
         timeout: Duration,
         predicate: (String) -> Boolean,
-    ): String =
-        withTimeoutOrNull(timeout) { stdoutLines().firstOrNull(predicate) }
+    ): String {
+        check(stdoutConsumed.compareAndSet(false, true)) { "stdout has already been consumed" }
+        val matched = CompletableDeferred<String?>()
+        // A background reader drains stdout for the child's whole life: it reports
+        // the first matching line, then keeps reading so a chatty child can't block
+        // on a full pipe. A timed-out wait does not stop it (the child stays alive);
+        // close()/killTree closes the stream, which unblocks the read.
+        scope.launch {
+            runCatching {
+                process.inputStream.bufferedReader().use { reader ->
+                    var line = reader.readLine()
+                    while (line != null) {
+                        if (!matched.isCompleted && predicate(line)) {
+                            matched.complete(line)
+                        }
+                        line = reader.readLine()
+                    }
+                }
+            }
+            matched.complete(null) // stdout closed without a (further) match
+        }
+        return withTimeoutOrNull(timeout) { matched.await() }
             ?: throw ProcessException.NotReady(program, timeout)
+    }
+
+    /**
+     * Wait until a TCP connection to [host]:[port] is accepted. Throws
+     * [ProcessException.NotReady] on the deadline; does not kill the child.
+     */
+    public suspend fun waitForPort(
+        host: String,
+        port: Int,
+        timeout: Duration,
+    ): Unit = waitForPort(InetSocketAddress(host, port), timeout)
 
     /**
      * Wait until [address] accepts a TCP connection. Throws
@@ -180,8 +238,9 @@ public class RunningProcess internal constructor(
             }
         }
 
-    /** Hard-kill the child's tree and release resources. */
+    /** Hard-kill the child's tree and release resources. Idempotent. */
     override fun close() {
+        if (!closed.compareAndSet(false, true)) return
         try {
             killTree()
         } finally {
