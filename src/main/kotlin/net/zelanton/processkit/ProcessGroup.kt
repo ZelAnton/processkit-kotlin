@@ -56,7 +56,7 @@ public class ProcessGroup(
      * streaming. The handle's `close()` kills only this child's subtree; the
      * group's own [close] reaps the whole tree.
      */
-    public suspend fun start(command: Command): RunningProcess {
+    override suspend fun start(command: Command): RunningProcess {
         val process = withContext(Dispatchers.IO) { containment.spawnChecked(command) }
         return RunningProcess(
             process,

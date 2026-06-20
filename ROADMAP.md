@@ -386,11 +386,13 @@ Effort in parentheses. The **lean-core / 0.1** boundary is marked.
    assertions, redacted `toString`). Hand-written, idiomatic Kotlin DI — **no**
    MockK-generated runner shipped (the crate's `mock` feature, intentionally
    dropped; consumers add MockK themselves for expectation-style mocking).
-   *Deferred to 8b (with the streaming seam):* `start()` on the `ProcessRunner`
-   seam so `ScriptedRunner` drives streaming too (a fakeable `RunningProcess`,
-   line-delay, pending/cancel replies); sequenced replies (`onSequence` —
-   fail-then-succeed) for retry tests; `CliClient.firstLine`; and
-   `CliClient.defaultEnvRemove` (needs single-var env removal on `Command`).
+   **8b done:** `start()` on the `ProcessRunner` seam (default throws
+   `Unsupported`); `ScriptedRunner.start` streams a scripted `RunningProcess`
+   (via a fake `ScriptedProcess`) through the real machinery; `onSequence`
+   (fail-then-succeed); `firstLine` on `ProcessRunner`/`Command`/`CliClient`.
+   *Deferred to 8c:* scripted-stream timing refinements (line-delay pacing,
+   pending-until-cancel) and `Command.envRemove` / `CliClient.defaultEnvRemove`
+   (single-var env removal — its own small env-model change).
 
 **— Rust feature flags, mapped to Kotlin (each always-compiled, runtime/DI-gated) —**
 

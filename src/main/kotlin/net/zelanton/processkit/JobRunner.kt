@@ -35,4 +35,23 @@ public object JobRunner : ProcessRunner {
             containment.close()
         }
     }
+
+    override suspend fun start(command: Command): RunningProcess {
+        val containment = newContainment(command.program)
+        val process =
+            try {
+                withContext(Dispatchers.IO) { containment.spawnChecked(command) }
+            } catch (failure: Throwable) {
+                containment.close()
+                throw failure
+            }
+        return RunningProcess(
+            process,
+            command.program,
+            containment,
+            ownsContainer = true,
+            command.timeoutOrNull,
+            command.stdinSource,
+        )
+    }
 }

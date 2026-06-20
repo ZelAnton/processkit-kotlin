@@ -47,7 +47,9 @@ import kotlin.time.Duration.Companion.milliseconds
 public class RunningProcess internal constructor(
     private val process: Process,
     private val program: String,
-    private val container: Containment,
+    // Null for a scripted handle (which owns no kernel container); always present
+    // when [ownsContainer] is true.
+    private val container: Containment?,
     private val ownsContainer: Boolean,
     timeout: Duration?,
     stdin: Stdin,
@@ -246,14 +248,14 @@ public class RunningProcess internal constructor(
         } finally {
             scope.cancel()
             if (ownsContainer) {
-                container.close()
+                container?.close()
             }
         }
     }
 
     private fun killTree() {
         if (ownsContainer) {
-            container.killAll()
+            container?.killAll()
         } else {
             process.descendants().forEach { it.destroyForcibly() }
             process.destroyForcibly()

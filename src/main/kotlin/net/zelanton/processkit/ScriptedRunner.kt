@@ -1,21 +1,29 @@
 package net.zelanton.processkit
 
+import java.util.concurrent.atomic.AtomicInteger
+
 /**
  * A [ProcessRunner] that serves canned replies — the hermetic test double.
  *
  * Register replies by exact command line or by prefix; the first matching rule
  * wins, else the [fallback]. No subprocess is ever started, so code that shells
- * out can be unit-tested on any OS.
+ * out can be unit-tested on any OS — through the bulk verbs ([execute] and the
+ * `run`/`outputString`/… vocabulary over it) and through [start] (streaming): a
+ * scripted [start] hands back a [RunningProcess] whose canned output flows through
+ * the same `stdoutLines` / `waitForLine` / `finish` machinery as a real child.
  *
  * ```
  * val runner = ScriptedRunner()
  *     .on("git", "rev-parse", "HEAD", reply = Reply.ok("abc123"))
+ *     .onSequence("git", "push", replies = listOf(Reply.fail(1, "rejected"), Reply.ok("pushed")))
  *     .fallback(Reply.fail(1, "unknown command"))
- * assertEquals("abc123", runner.run(Command("git", "rev-parse", "HEAD")))
  * ```
+ *
+ * A scripted handle models a **finite** stream (the canned output is delivered in
+ * full); timing-paced and never-exiting scripted streams are not modelled.
  */
 public class ScriptedRunner : ProcessRunner {
-    private val rules = mutableListOf<Pair<(List<String>) -> Boolean, Reply>>()
+    private val rules = mutableListOf<Rule>()
     private var fallbackReply: Reply? = null
 
     /** Match a command whose full command line equals [commandLine]. */
@@ -25,7 +33,7 @@ public class ScriptedRunner : ProcessRunner {
     ): ScriptedRunner =
         apply {
             val expected = commandLine.toList()
-            rules.add({ line: List<String> -> line == expected } to reply)
+            rules.add(Rule({ line -> line == expected }, listOf(reply)))
         }
 
     /** Match a command whose command line starts with [prefix]. */
@@ -36,25 +44,34 @@ public class ScriptedRunner : ProcessRunner {
         apply {
             val expected = prefix.toList()
             rules.add(
-                { line: List<String> -> line.size >= expected.size && line.subList(0, expected.size) == expected } to
-                    reply,
+                Rule(
+                    { line -> line.size >= expected.size && line.subList(0, expected.size) == expected },
+                    listOf(reply),
+                ),
             )
+        }
+
+    /**
+     * Match the exact [commandLine] and serve each of [replies] in turn — the
+     * first matching call gets the first reply, and so on; once exhausted, the
+     * last reply repeats forever. The declarative form for retry scenarios
+     * (fail once, then succeed). Both [execute] and [start] advance the sequence.
+     */
+    public fun onSequence(
+        vararg commandLine: String,
+        replies: List<Reply>,
+    ): ScriptedRunner =
+        apply {
+            require(replies.isNotEmpty()) { "onSequence needs at least one reply" }
+            val expected = commandLine.toList()
+            rules.add(Rule({ line -> line == expected }, replies.toList()))
         }
 
     /** Reply used when no rule matches. Without one, an unmatched run throws. */
     public fun fallback(reply: Reply): ScriptedRunner = apply { fallbackReply = reply }
 
     override suspend fun execute(command: Command): ProcessResult<ByteArray> {
-        val line = command.commandLine
-        val reply =
-            rules.firstOrNull { it.first(line) }?.second
-                ?: fallbackReply
-                // Redacted like `Invocation`: program + arg count, never the argv
-                // (so this message is safe even if it reaches a log via a retry).
-                ?: throw ProcessException.Spawn(
-                    command.program,
-                    IllegalStateException("no scripted reply for `${command.program}` (${line.size - 1} arg(s))"),
-                )
+        val reply = matchedReply(command)
         return ProcessResult(
             program = command.program,
             stdout = reply.stdout,
@@ -62,6 +79,42 @@ public class ScriptedRunner : ProcessRunner {
             exitCode = reply.exitCode,
             timedOut = reply.timedOut,
         )
+    }
+
+    override suspend fun start(command: Command): RunningProcess {
+        val reply = matchedReply(command)
+        val process = ScriptedProcess(reply.stdout, reply.stderr.encodeToByteArray(), reply.exitCode)
+        return RunningProcess(
+            process,
+            command.program,
+            container = null,
+            ownsContainer = false,
+            command.timeoutOrNull,
+            command.stdinSource,
+        )
+    }
+
+    private fun matchedReply(command: Command): Reply {
+        val line = command.commandLine
+        return rules.firstOrNull { it.matches(line) }?.nextReply()
+            ?: fallbackReply
+            // Redacted like `Invocation`: program + arg count, never the argv
+            // (so this message is safe even if it reaches a log via a retry).
+            ?: throw ProcessException.Spawn(
+                command.program,
+                IllegalStateException("no scripted reply for `${command.program}` (${line.size - 1} arg(s))"),
+            )
+    }
+
+    /** A registered match plus the reply (or ordered sequence) it serves. */
+    private class Rule(
+        val matches: (List<String>) -> Boolean,
+        private val replies: List<Reply>,
+    ) {
+        private val cursor = AtomicInteger(0)
+
+        /** Each call advances the sequence; once exhausted, the last reply repeats. */
+        fun nextReply(): Reply = replies[minOf(cursor.getAndIncrement(), replies.size - 1)]
     }
 }
 

@@ -80,6 +80,13 @@ public class RecordingRunner(
         return inner.execute(command)
     }
 
+    override suspend fun start(command: Command): RunningProcess {
+        // Recorded before delegating, so a streamed run is captured even if its
+        // stream is never consumed.
+        synchronized(lock) { recorded.add(Invocation.from(command)) }
+        return inner.start(command)
+    }
+
     public companion object {
         /** A recorder whose inner runner replies with [reply] to everything. */
         public fun replying(reply: Reply): RecordingRunner = RecordingRunner(ScriptedRunner().fallback(reply))

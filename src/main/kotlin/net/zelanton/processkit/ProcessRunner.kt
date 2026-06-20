@@ -1,5 +1,7 @@
 package net.zelanton.processkit
 
+import kotlinx.coroutines.flow.firstOrNull
+
 /**
  * The seam every run goes through — and the testing seam.
  *
@@ -18,6 +20,17 @@ public interface ProcessRunner {
      * A timeout is captured ([ProcessResult.timedOut]), not thrown, at this level.
      */
     public suspend fun execute(command: Command): ProcessResult<ByteArray>
+
+    /**
+     * Start [command] and return a live [RunningProcess] for streaming — the
+     * streaming half of the seam. The real [JobRunner] (and [ProcessGroup]) spawn a
+     * child; a [ScriptedRunner] hands back a scripted handle whose canned output
+     * flows through the same machinery, so [firstLine] and streaming code test
+     * hermetically. The default throws [ProcessException.Unsupported] for a runner
+     * that has no streaming backing (e.g. a [RecordReplayRunner]).
+     */
+    public suspend fun start(command: Command): RunningProcess =
+        throw ProcessException.Unsupported("start (streaming) on ${this::class.simpleName}")
 }
 
 /** The full captured outcome (raw bytes); a non-zero exit is not an error here. */
@@ -89,6 +102,25 @@ public suspend fun <T> ProcessRunner.parse(
 ): T {
     val stdout = retrying(command) { outputString(command).ensureSuccess().stdout }
     return transform(stdout)
+}
+
+/**
+ * Stream [command]'s stdout and return the first line matching [predicate] (or
+ * `null` if the stream ends first), then stop the run. Routes through [start], so
+ * it works on any runner — including a [ScriptedRunner] in tests. Unlike
+ * [RunningProcess.waitForLine] (a readiness probe that leaves the child running),
+ * this is for scanning a finite command's output and reaps the run when done.
+ */
+public suspend fun ProcessRunner.firstLine(
+    command: Command,
+    predicate: (String) -> Boolean,
+): String? {
+    val run = start(command)
+    return try {
+        run.stdoutLines().firstOrNull(predicate)
+    } finally {
+        run.close()
+    }
 }
 
 /** Normalize captured text to `\n` line endings (CRLF and lone CR → LF). */

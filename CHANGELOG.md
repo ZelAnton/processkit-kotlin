@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Streaming `ProcessRunner` seam: `start(command): RunningProcess` is now part of
+  the seam (default throws `ProcessException.Unsupported`). `ScriptedRunner.start`
+  hands back a scripted handle whose canned output streams through the same
+  `stdoutLines` / `waitForLine` / `finish` machinery as a real child, so streaming
+  code tests hermetically; `ScriptedRunner.onSequence` serves fail-then-succeed
+  reply sequences; `RecordingRunner` records streamed runs too. New `firstLine`
+  verb (on `ProcessRunner`, `Command`, and `CliClient`) — stream stdout and return
+  the first matching line (`null` if none), reaping the run.
 - Record/replay cassettes: `RecordReplayRunner.record(path)` captures real
   command→result pairs to a human-diffable JSON cassette; `RecordReplayRunner.replay(path)`
   serves them hermetically (a miss is `ProcessException.CassetteMiss`, never a

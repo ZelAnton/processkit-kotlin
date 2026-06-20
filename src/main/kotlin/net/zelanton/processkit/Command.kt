@@ -1,7 +1,5 @@
 package net.zelanton.processkit
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.nio.file.Path
 import kotlin.time.Duration
 
@@ -156,18 +154,14 @@ public class Command(
      * run lives in its own kill-on-close container; `use { }` the handle so a
      * dropped or cancelled run reaps the tree.
      */
-    public suspend fun start(): RunningProcess {
-        val command = this
-        val containment = newContainment(program)
-        val process =
-            try {
-                withContext(Dispatchers.IO) { containment.spawnChecked(command) }
-            } catch (failure: Throwable) {
-                containment.close()
-                throw failure
-            }
-        return RunningProcess(process, program, containment, ownsContainer = true, timeoutOrNull, stdinSource)
-    }
+    public suspend fun start(): RunningProcess = JobRunner.start(this)
+
+    /**
+     * Stream stdout and return the first line matching [predicate] (or `null` if
+     * the stream ends first), reaping the run when done. For scanning a finite
+     * command's output; for readiness use [RunningProcess.waitForLine].
+     */
+    public suspend fun firstLine(predicate: (String) -> Boolean): String? = JobRunner.firstLine(this, predicate)
 
     /** Start a shell-free pipeline: this command's stdout feeds [next]'s stdin. */
     public fun pipe(next: Command): Pipeline = Pipeline(this, next)

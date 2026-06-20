@@ -154,4 +154,20 @@ public class CliClient(
         vararg args: String,
         transform: (String) -> T,
     ): T = runner.parse(command(*args), transform)
+
+    /**
+     * Stream stdout and return the first line matching [predicate] (or `null` if
+     * the stream ends first), reaping the run when done. For scanning a finite
+     * command's output; for readiness use [RunningProcess.waitForLine].
+     */
+    public suspend fun firstLine(
+        command: Command,
+        predicate: (String) -> Boolean,
+    ): String? = runner.firstLine(effective(command), predicate)
+
+    /** Stream stdout and return the first line matching [predicate] (`null` if none). */
+    public suspend fun firstLine(
+        vararg args: String,
+        predicate: (String) -> Boolean,
+    ): String? = runner.firstLine(command(*args), predicate)
 }
