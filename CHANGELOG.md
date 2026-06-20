@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Record/replay cassettes: `RecordReplayRunner.record(path)` captures real
+  command→result pairs to a human-diffable JSON cassette; `RecordReplayRunner.replay(path)`
+  serves them hermetically (a miss is `ProcessException.CassetteMiss`, never a
+  surprise subprocess). Matches on program + args + working dir + stdin digest;
+  duplicates replay in order then repeat the last. Environment **values** are never
+  written (sorted names only); the file is owner-only (`0600`) on POSIX.
 - Observability via SLF4J: the library logs lifecycle events (run start/finish,
   retry attempts, supervisor restarts, group signal/suspend/resume/shutdown) at
   DEBUG under the `net.zelanton.processkit` logger. Messages are secret-safe —

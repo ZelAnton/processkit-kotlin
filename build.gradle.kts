@@ -4,6 +4,8 @@ plugins {
     // them transitively.
     `java-library`
     alias(libs.plugins.kotlin.jvm)
+    // Generates the @Serializable codecs for the record/replay cassette format.
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ktlint)
     // Publishing to Maven Central via the Sonatype Central Portal. This plugin
     // applies `maven-publish` + `signing` for you, builds the sources/javadoc
@@ -64,6 +66,10 @@ dependencies {
     // exposing it in the public API), so `implementation`. With no binding on the
     // consumer's runtime classpath, SLF4J 2.x is a silent no-op.
     implementation(libs.slf4j.api)
+
+    // kotlinx.serialization JSON — the record/replay cassette format. Internal
+    // detail (the cassette schema is not public API), so `implementation`.
+    implementation(libs.kotlinx.serialization.json)
 
     // kotlin("test") routes to the JUnit Platform (Jupiter) backend because
     // junit-jupiter is on the test classpath and `useJUnitPlatform()` is set.

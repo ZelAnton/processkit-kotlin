@@ -39,6 +39,9 @@ kotlinx-coroutines = "1.10.2"
 # on log output.
 slf4j = "2.0.16"
 logback = "1.5.25"
+# kotlinx.serialization — the cassette (record/replay) JSON format. The compiler
+# plugin is versioned with Kotlin; the runtime is declared here.
+kotlinx-serialization = "1.8.0"
 
 [libraries]
 # JUnit BOM — aligns every junit-* artifact to one version; the dependencies
@@ -52,6 +55,7 @@ kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-t
 
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 
 # Bundles group related libraries so a build script can pull them with a single
 # alias, e.g. `testImplementation(libs.bundles.testing)`. Uncomment and extend
@@ -61,6 +65,8 @@ logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "lo
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+# The serialization compiler plugin must match the Kotlin version exactly.
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint-plugin" }
 maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "maven-publish-plugin" }
 binary-compatibility-validator = { id = "org.jetbrains.kotlinx.binary-compatibility-validator", version.ref = "binary-compatibility-validator" }

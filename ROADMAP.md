@@ -420,10 +420,12 @@ Effort in parentheses. The **lean-core / 0.1** boundary is marked.
     at DEBUG. **Never logs argv or env** (program names + exit codes only). The
     JVM's standard structured-logging seam — a Logback / log4j2 / OpenTelemetry
     backend rides the same SLF4J binding.
-13. **record/replay — replaces `record`** *(M)* — JSON cassettes over the
-    `ProcessRunner` seam (`kotlinx.serialization`); record once, replay
-    hermetically; the crate's secret-handling discipline mirrored (`0600` on
-    Unix, env values never persisted, strict cassette-miss error).
+13. **record/replay — replaces `record`** *(M)* — **done**: `RecordReplayRunner`
+    JSON cassettes over the `ProcessRunner` seam (`kotlinx.serialization`); record
+    once, replay hermetically; secret-handling discipline mirrored (`0600` on
+    POSIX, env values never persisted, strict `ProcessException.CassetteMiss`).
+    Covers the capturing/run verbs; streaming `start` recording is out of scope
+    (pairs with the deferred 8b streaming seam).
 
 (The crate's `mock` feature has no Kotlin counterpart — folded into step 8's
 hand-written doubles.)

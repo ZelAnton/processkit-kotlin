@@ -72,4 +72,13 @@ public abstract class ProcessException internal constructor(
     public class ResourceLimit internal constructor(
         message: String,
     ) : ProcessException(message)
+
+    /**
+     * A replay [RecordReplayRunner] had no cassette entry matching the command —
+     * never a surprise subprocess in replay mode. Re-record the cassette to cover
+     * the new invocation.
+     */
+    public class CassetteMiss internal constructor(
+        public val program: String,
+    ) : ProcessException("no cassette entry for `$program`")
 }
