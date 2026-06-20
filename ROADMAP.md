@@ -359,6 +359,13 @@ Effort in parentheses. The **lean-core / 0.1** boundary is marked.
    override, merged `outputEvents()` / tee to an `OutputStream`.
    *Gate:* stream a long child line-by-line; cancel the coroutine mid-stream →
    tree reaped, `Flow` completes, follow-up `finish()` reports `Cancelled`.
+   ✅ **Core done (2026-06-20)** on Windows + Linux: `RunningProcess`
+   (`start()` / `stdoutLines(): Flow` / background stderr / `finish()` / a
+   timeout watchdog / `close()`), `Stdin` sources (`none`/string/bytes/file),
+   and `waitFor` / `waitAny` / `waitAll`. **Remaining (3d, follow-on):**
+   interactive stdin writer (`keepStdinOpen`), `onStdoutLine`/`onStderrLine`
+   handlers, buffer policy + overflow, encoding override, merged
+   `outputEvents()` / tee.
    **← lean-core / 0.1 boundary**
 
 **— Demand-ordered core (still flag-less in Rust; order by real need) —**

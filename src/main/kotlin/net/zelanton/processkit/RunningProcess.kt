@@ -99,6 +99,16 @@ public class RunningProcess internal constructor(
         }
     }
 
+    /**
+     * Wait for the child to exit and return its exit code, without consuming
+     * output or releasing the handle. Use [finish] to also collect stderr, or
+     * [close] to release resources.
+     */
+    public suspend fun waitFor(): Int {
+        process.onExit().await()
+        return process.exitValue()
+    }
+
     /** Hard-kill the child's tree and release resources. */
     override fun close() {
         try {

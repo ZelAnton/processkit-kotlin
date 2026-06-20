@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `RunningProcess.waitFor()` plus `waitAny(...)` / `waitAll(...)` — wait for a
+  process to exit (returning its exit code), race several for the first to exit,
+  or join several; the handles stay usable afterwards.
 - `Stdin` + `Command.stdin(...)` — feed a command's standard input from a string,
   bytes, or a file. The default closes stdin (EOF) so a stdin-reading child can't
   block forever.
