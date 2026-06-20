@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Live output observation on `Command`: `onStdoutLine` / `onStderrLine` (a
+  fault-isolated callback per decoded line as the capture pump reads it),
+  `stdoutTee` / `stderrTee` (mirror each line to an `Appendable` — `System.out`, a
+  file `Writer`, …), and `stdoutEncoding` / `stderrEncoding` (decode non-UTF-8
+  output). Handlers/tees fire on the bulk verbs (and replay over a `ScriptedRunner`
+  reply, so progress code tests hermetically); a sink that throws is disabled for
+  the rest of the run without affecting capture.
 - Streaming `ProcessRunner` seam: `start(command): RunningProcess` is now part of
   the seam (default throws `ProcessException.Unsupported`). `ScriptedRunner.start`
   hands back a scripted handle whose canned output streams through the same

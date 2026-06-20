@@ -1,5 +1,6 @@
 package net.zelanton.processkit
 
+import java.nio.charset.Charset
 import java.nio.file.Path
 import kotlin.time.Duration
 
@@ -41,6 +42,18 @@ public class Command(
     internal var stdinSource: Stdin = Stdin.None
         private set
     internal var retryPolicy: RetryPolicy? = null
+        private set
+    internal var stdoutLineHandler: ((String) -> Unit)? = null
+        private set
+    internal var stderrLineHandler: ((String) -> Unit)? = null
+        private set
+    internal var stdoutTeeSink: Appendable? = null
+        private set
+    internal var stderrTeeSink: Appendable? = null
+        private set
+    internal var stdoutCharset: Charset = Charsets.UTF_8
+        private set
+    internal var stderrCharset: Charset = Charsets.UTF_8
         private set
 
     internal val commandLine: List<String> get() =
@@ -89,6 +102,43 @@ public class Command(
      * ([Stdin.none]) closes stdin, so a stdin-reading child sees EOF.
      */
     public fun stdin(source: Stdin): Command = apply { stdinSource = source }
+
+    /**
+     * Invoke [handler] for each decoded stdout line as it is read by the capture
+     * pump (the bulk verbs: `run` / `outputString` / …). At most one handler per
+     * stream — a repeat call replaces it. A handler that throws is caught and
+     * disabled for the rest of the run (the run continues). For a streamed run,
+     * observe stdout via [RunningProcess.stdoutLines] instead.
+     *
+     * The handler runs on a background pump thread, and the stdout and stderr
+     * handlers run on **separate** threads — guard any state they share.
+     */
+    public fun onStdoutLine(handler: (String) -> Unit): Command = apply { stdoutLineHandler = handler }
+
+    /** Invoke [handler] for each decoded stderr line. See [onStdoutLine]. */
+    public fun onStderrLine(handler: (String) -> Unit): Command = apply { stderrLineHandler = handler }
+
+    /**
+     * Tee every decoded stdout line to [sink] (followed by `\n`) as it is read —
+     * capture *and* mirror it (e.g. to `System.out`, a file `Writer`, or a
+     * `StringBuilder`). Fires independently of [onStdoutLine]. A [sink] that throws
+     * is disabled for the rest of the run; capture is unaffected.
+     */
+    public fun stdoutTee(sink: Appendable): Command = apply { stdoutTeeSink = sink }
+
+    /** Tee every decoded stderr line to [sink] (followed by `\n`). See [stdoutTee]. */
+    public fun stderrTee(sink: Appendable): Command = apply { stderrTeeSink = sink }
+
+    /**
+     * Decode stdout with [charset] instead of UTF-8 (for non-UTF-8 tools). Line
+     * observation ([onStdoutLine] / [stdoutTee]) splits on the ASCII `\n`/`\r`
+     * bytes, so a wide encoding whose units contain those bytes (e.g. UTF-16) is
+     * not supported for line splitting — the bulk `outputString` decode is fine.
+     */
+    public fun stdoutEncoding(charset: Charset): Command = apply { stdoutCharset = charset }
+
+    /** Decode stderr with [charset] instead of UTF-8. */
+    public fun stderrEncoding(charset: Charset): Command = apply { stderrCharset = charset }
 
     /**
      * Retry the run while [retryIf] accepts the failure, up to [maxAttempts] total
@@ -175,6 +225,12 @@ public class Command(
         clone.timeoutOrNull = timeoutOrNull
         clone.stdinSource = stdinSource
         clone.retryPolicy = retryPolicy
+        clone.stdoutLineHandler = stdoutLineHandler
+        clone.stderrLineHandler = stderrLineHandler
+        clone.stdoutTeeSink = stdoutTeeSink
+        clone.stderrTeeSink = stderrTeeSink
+        clone.stdoutCharset = stdoutCharset
+        clone.stderrCharset = stderrCharset
         return clone
     }
 

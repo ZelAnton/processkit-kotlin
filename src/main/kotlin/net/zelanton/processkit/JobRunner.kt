@@ -21,13 +21,7 @@ public object JobRunner : ProcessRunner {
         try {
             val process = withContext(Dispatchers.IO) { containment.spawnChecked(command) }
             log.debug("run: started `{}` ({})", command.program, containment.mechanism)
-            val result =
-                captureRun(
-                    process,
-                    command.program,
-                    command.timeoutOrNull,
-                    command.stdinSource,
-                ) { containment.killAll() }
+            val result = captureRun(process, command) { containment.killAll() }
             log.debug("run: `{}` finished (exit={}, timedOut={})", command.program, result.exitCode, result.timedOut)
             return result
         } finally {

@@ -72,6 +72,9 @@ public class ScriptedRunner : ProcessRunner {
 
     override suspend fun execute(command: Command): ProcessResult<ByteArray> {
         val reply = matchedReply(command)
+        // Fire the command's line handlers / tees over the canned output, so
+        // progress-reporting code tests hermetically (matching the live pump).
+        replayLineHandlers(command, reply.stdout, reply.stderr.encodeToByteArray())
         return ProcessResult(
             program = command.program,
             stdout = reply.stdout,

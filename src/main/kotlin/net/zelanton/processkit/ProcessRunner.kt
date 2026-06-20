@@ -41,7 +41,7 @@ public suspend fun ProcessRunner.outputString(command: Command): ProcessResult<S
     val result = execute(command)
     return ProcessResult(
         program = result.program,
-        stdout = result.stdout.decodeToString().normalizeNewlines(),
+        stdout = String(result.stdout, command.stdoutCharset).normalizeNewlines(),
         stderr = result.stderr,
         exitCode = result.exitCode,
         timedOut = result.timedOut,

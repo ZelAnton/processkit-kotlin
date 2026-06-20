@@ -48,7 +48,7 @@ public class ProcessGroup(
 
     override suspend fun execute(command: Command): ProcessResult<ByteArray> {
         val process = withContext(Dispatchers.IO) { containment.spawnChecked(command) }
-        return captureRun(process, command.program, command.timeoutOrNull, command.stdinSource) { killSubtree(process) }
+        return captureRun(process, command) { killSubtree(process) }
     }
 
     /**

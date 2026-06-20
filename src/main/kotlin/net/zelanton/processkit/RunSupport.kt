@@ -52,21 +52,21 @@ internal fun Containment.spawnChecked(command: Command): Process =
  */
 internal suspend fun captureRun(
     process: Process,
-    program: String,
-    timeout: Duration?,
-    stdin: Stdin,
+    command: Command,
     killRun: () -> Unit,
 ): ProcessResult<ByteArray> =
     withContext(Dispatchers.IO) {
         try {
-            applyStdin(this, process, stdin)
-            val stdout = async { process.inputStream.readBytes() }
-            val stderr = async { process.errorStream.readBytes() }
-            val timedOut = awaitProcessExit(process, timeout, killRun)
+            applyStdin(this, process, command.stdinSource)
+            val stdoutSink = lineSinkFor(command.stdoutLineHandler, command.stdoutTeeSink)
+            val stderrSink = lineSinkFor(command.stderrLineHandler, command.stderrTeeSink)
+            val stdout = async { pumpStream(process.inputStream, command.stdoutCharset, stdoutSink) }
+            val stderr = async { pumpStream(process.errorStream, command.stderrCharset, stderrSink) }
+            val timedOut = awaitProcessExit(process, command.timeoutOrNull, killRun)
             ProcessResult(
-                program = program,
+                program = command.program,
                 stdout = stdout.await(),
-                stderr = stderr.await().decodeToString().normalizeNewlines(),
+                stderr = String(stderr.await(), command.stderrCharset).normalizeNewlines(),
                 exitCode = process.exitValue(),
                 timedOut = timedOut,
             )
