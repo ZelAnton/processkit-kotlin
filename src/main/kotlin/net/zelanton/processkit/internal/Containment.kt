@@ -105,6 +105,20 @@ internal interface Containment : AutoCloseable {
     }
 }
 
+/**
+ * Per-core CPU quota → Windows Job Object hard-cap `CpuRate`: 1/100 of a percent of
+ * *total* system CPU, in `1..=10000`. [cores] is a fraction of one core (`0.5` = half
+ * a core); [cpus] is the host processor count. A quota at or above the core count
+ * saturates at 100% (`10000`), and the result floors at `1` (a zero rate is invalid).
+ */
+internal fun cpuHardCapRate(
+    cores: Double,
+    cpus: Int,
+): Int {
+    val rate = Math.round((cores / cpus.coerceAtLeast(1)) * 10_000.0)
+    return rate.coerceIn(1L, 10_000L).toInt()
+}
+
 /** Build a [ProcessBuilder] with the working directory and environment applied. */
 internal fun newProcessBuilder(
     command: List<String>,
@@ -270,17 +284,9 @@ internal class PosixGroupContainment(
 internal class WindowsJobContainment(
     limits: ResourceLimits = ResourceLimits(),
 ) : Containment {
-    init {
-        if (limits.cpuQuota != null) {
-            throw ProcessException.ResourceLimit(
-                "cpuQuota is not yet enforced (Windows CPU rate control lands in a later increment)",
-            )
-        }
-    }
-
     override val mechanism: Mechanism = Mechanism.JOB_OBJECT
 
-    private val job: MemorySegment = Win32.createContainedJob(limits.memoryMax, limits.maxProcesses)
+    private val job: MemorySegment = Win32.createContainedJob(limits.memoryMax, limits.maxProcesses, limits.cpuQuota)
     private val lock = Any()
     private var closed = false
 
@@ -444,6 +450,9 @@ internal object Win32 {
     private const val JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: Int = 0x2000
     private const val JOB_OBJECT_LIMIT_ACTIVE_PROCESS: Int = 0x8
     private const val JOB_OBJECT_LIMIT_JOB_MEMORY: Int = 0x200
+    private const val JOB_OBJECT_CPU_RATE_CONTROL_INFORMATION_CLASS: Int = 15
+    private const val JOB_OBJECT_CPU_RATE_CONTROL_ENABLE: Int = 0x1
+    private const val JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP: Int = 0x4
     private const val PROCESS_TERMINATE: Int = 0x0001
     private const val PROCESS_SET_QUOTA: Int = 0x0100
 
@@ -569,18 +578,20 @@ internal object Win32 {
 
     /**
      * Create a kill-on-close Job Object, optionally capping total committed memory
-     * ([memoryMax] bytes) and live process count ([maxProcesses]) for the tree.
+     * ([memoryMax] bytes), live process count ([maxProcesses]), and CPU
+     * ([cpuQuota], a fraction of one core) for the tree.
      */
     internal fun createContainedJob(
         memoryMax: Long?,
         maxProcesses: Int?,
+        cpuQuota: Double?,
     ): MemorySegment {
         val job = createJobObjectW.invoke(MemorySegment.NULL, MemorySegment.NULL) as MemorySegment
         if (job.address() == 0L) {
             throwLastError("CreateJobObjectW")
         }
-        // The struct is only needed for the duration of the SetInformationJobObject
-        // call; the returned job HANDLE is a kernel handle (a plain address value)
+        // The structs are only needed for the duration of the SetInformationJobObject
+        // calls; the returned job HANDLE is a kernel handle (a plain address value)
         // that outlives the arena.
         Arena.ofConfined().use { arena ->
             val info = arena.allocate(extendedLimitLayout)
@@ -604,8 +615,28 @@ internal object Win32 {
             if (ok == 0) {
                 throwLastError("SetInformationJobObject")
             }
+            if (cpuQuota != null) {
+                setCpuHardCap(job, arena, cpuQuota)
+            }
         }
         return job
+    }
+
+    // JOBOBJECT_CPU_RATE_CONTROL_INFORMATION: { DWORD ControlFlags; union { DWORD
+    // CpuRate; ... } } — 8 bytes, CpuRate at offset 4.
+    private fun setCpuHardCap(
+        job: MemorySegment,
+        arena: Arena,
+        cpuQuota: Double,
+    ) {
+        val cpus = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val info = arena.allocate(8)
+        info.set(ValueLayout.JAVA_INT, 0, JOB_OBJECT_CPU_RATE_CONTROL_ENABLE or JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP)
+        info.set(ValueLayout.JAVA_INT, 4, cpuHardCapRate(cpuQuota, cpus))
+        val ok = setInformationJobObject.invoke(job, JOB_OBJECT_CPU_RATE_CONTROL_INFORMATION_CLASS, info, 8) as Int
+        if (ok == 0) {
+            throwLastError("SetInformationJobObject(cpuRate)")
+        }
     }
 
     internal fun assignToJob(

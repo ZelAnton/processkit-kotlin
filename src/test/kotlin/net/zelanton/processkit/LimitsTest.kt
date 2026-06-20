@@ -3,8 +3,10 @@ package net.zelanton.processkit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import net.zelanton.processkit.internal.Os
+import net.zelanton.processkit.internal.cpuHardCapRate
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 /** Resource-limit validation (pure) and enforcement / fail-fast (real-subprocess). */
@@ -41,13 +43,31 @@ class LimitsTest {
                     ResourceLimits(memoryMax = 64L * 1024 * 1024),
                 )
             }
+            assertFailsWith<ProcessException.ResourceLimit> { ProcessGroup(ResourceLimits(cpuQuota = 0.5)) }
         }
 
     @Test
-    fun `cpuQuota is not yet enforced and fails fast`(): Unit =
+    fun `cpuHardCapRate converts a per-core quota to a job rate`() {
+        // CpuRate is 1/100 of a percent of total system CPU.
+        assertEquals(2_500, cpuHardCapRate(1.0, 4)) // 1 core of 4 = 25%
+        assertEquals(1_250, cpuHardCapRate(0.5, 4)) // half a core of 4
+        assertEquals(5_000, cpuHardCapRate(1.0, 2))
+    }
+
+    @Test
+    fun `cpuHardCapRate saturates at 100 percent and floors at 1`() {
+        assertEquals(10_000, cpuHardCapRate(4.0, 4)) // a whole machine
+        assertEquals(10_000, cpuHardCapRate(8.0, 4)) // over the core count
+        assertEquals(1, cpuHardCapRate(0.00001, 64)) // a tiny quota can't round to 0 (invalid)
+    }
+
+    @Test
+    fun `Windows accepts a cpu quota`(): Unit =
         runBlocking {
-            assumeSupported()
-            assertFailsWith<ProcessException.ResourceLimit> { ProcessGroup(ResourceLimits(cpuQuota = 0.5)) }
+            assumeWindows()
+            ProcessGroup(ResourceLimits(cpuQuota = 0.5)).use { group ->
+                group.run(Command("cmd", "/c", "echo ok"))
+            }
         }
 
     @Test
