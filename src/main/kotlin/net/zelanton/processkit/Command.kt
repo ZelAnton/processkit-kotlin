@@ -42,6 +42,8 @@ public class Command(
         private set
     internal var stdinSource: Stdin = Stdin.None
         private set
+    internal var retryPolicy: RetryPolicy? = null
+        private set
 
     internal val commandLine: List<String> get() =
         buildList {
@@ -89,6 +91,32 @@ public class Command(
      * ([Stdin.none]) closes stdin, so a stdin-reading child sees EOF.
      */
     public fun stdin(source: Stdin): Command = apply { stdinSource = source }
+
+    /**
+     * Retry the run while [retryIf] accepts the failure, up to [maxAttempts] total
+     * attempts, sleeping [backoff] between tries (see [RetryWhen] for ready-made
+     * classifiers).
+     *
+     * Honored only by the **success-checking** verbs ([run] / [runUnit] /
+     * [exitCode] / [probe]) — the ones that surface failure as a
+     * [ProcessException] the classifier can inspect. The capturing verbs
+     * ([outputString] / [outputBytes]) hand back every outcome as data and do not
+     * retry, and a cancelled run is never retried.
+     *
+     * Each attempt re-executes the whole command as a fresh process, so only use
+     * it for operations that are safe to repeat — a side effect that already landed
+     * once will be replayed.
+     */
+    public fun retry(
+        maxAttempts: Int,
+        backoff: Duration,
+        retryIf: (ProcessException) -> Boolean,
+    ): Command =
+        apply {
+            require(maxAttempts >= 1) { "maxAttempts must be >= 1, was $maxAttempts" }
+            require(!backoff.isNegative()) { "backoff must not be negative, was $backoff" }
+            retryPolicy = RetryPolicy(maxAttempts, backoff, retryIf)
+        }
 
     /** Require a zero exit and return trimmed stdout. */
     public suspend fun run(): String = JobRunner.run(this)

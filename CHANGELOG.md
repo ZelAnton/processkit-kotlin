@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `Command.retry(maxAttempts, backoff, retryIf)` — replay one run to success: the
+  success-checking verbs (`run` / `runUnit` / `exitCode` / `probe`) re-execute a
+  fresh process while a classifier accepts the `ProcessException`, sleeping a fixed
+  `backoff` between tries; the capturing verbs and a cancelled run never retry.
+  `RetryWhen` offers ready-made classifiers (`timedOut`, `transient`, `exitCode(…)`).
 - Readiness probes on `RunningProcess`: `waitForLine` (until a stdout line
   matches), `waitForPort` (until a TCP port accepts), and `waitUntil` (a custom
   check) — each throwing the new `ProcessException.NotReady` (distinct from

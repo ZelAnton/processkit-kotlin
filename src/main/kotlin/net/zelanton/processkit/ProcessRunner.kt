@@ -35,35 +35,47 @@ public suspend fun ProcessRunner.outputString(command: Command): ProcessResult<S
     )
 }
 
-/** Require success and return trimmed stdout; throws on a non-zero exit / timeout. */
-public suspend fun ProcessRunner.run(command: Command): String = outputString(command).ensureSuccess().stdout.trimEnd()
+/**
+ * Require success and return trimmed stdout; throws on a non-zero exit / timeout.
+ * Honors the command's [retry][Command.retry] policy.
+ */
+public suspend fun ProcessRunner.run(command: Command): String =
+    retrying(command) { outputString(command).ensureSuccess().stdout.trimEnd() }
 
-/** Require success, discarding the output. */
+/** Require success, discarding the output. Honors [retry][Command.retry]. */
 public suspend fun ProcessRunner.runUnit(command: Command) {
-    outputString(command).ensureSuccess()
+    retrying(command) { outputString(command).ensureSuccess() }
 }
 
-/** The exit code; a timed-out run throws rather than inventing a code. */
-public suspend fun ProcessRunner.exitCode(command: Command): Int {
-    val result = execute(command)
-    if (result.timedOut) {
-        throw ProcessException.Timeout(command.program, command.timeoutOrNull)
+/**
+ * The exit code; a timed-out run throws rather than inventing a code. Honors the
+ * command's [retry][Command.retry] policy (which can only trigger on the timeout).
+ */
+public suspend fun ProcessRunner.exitCode(command: Command): Int =
+    retrying(command) {
+        val result = execute(command)
+        if (result.timedOut) {
+            throw ProcessException.Timeout(command.program, command.timeoutOrNull)
+        }
+        result.exitCode
     }
-    return result.exitCode
-}
 
-/** A yes/no probe: exit `0` → `true`, `1` → `false`, anything else throws. */
-public suspend fun ProcessRunner.probe(command: Command): Boolean {
-    val result = execute(command)
-    if (result.timedOut) {
-        throw ProcessException.Timeout(command.program, command.timeoutOrNull)
+/**
+ * A yes/no probe: exit `0` → `true`, `1` → `false`, anything else throws. Honors
+ * the command's [retry][Command.retry] policy.
+ */
+public suspend fun ProcessRunner.probe(command: Command): Boolean =
+    retrying(command) {
+        val result = execute(command)
+        if (result.timedOut) {
+            throw ProcessException.Timeout(command.program, command.timeoutOrNull)
+        }
+        when (result.exitCode) {
+            0 -> true
+            1 -> false
+            else -> throw ProcessException.Exit(command.program, result.exitCode, result.stderr)
+        }
     }
-    return when (result.exitCode) {
-        0 -> true
-        1 -> false
-        else -> throw ProcessException.Exit(command.program, result.exitCode, result.stderr)
-    }
-}
 
 /** Normalize captured text to `\n` line endings (CRLF and lone CR → LF). */
 internal fun String.normalizeNewlines(): String = replace("\r\n", "\n").replace('\r', '\n')
