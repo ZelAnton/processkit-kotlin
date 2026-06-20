@@ -97,7 +97,8 @@ jobs:
           [ -n "$SIGNING_KEY" ] || missing+=(SIGNING_KEY)
           [ -n "$SIGNING_PASSWORD" ] || missing+=(SIGNING_PASSWORD)
           if [ ${#missing[@]} -ne 0 ]; then
-            echo "::error::Missing required repository secret(s): ${missing[*]}. Set them in the repository's Actions secrets."
+            echo "::error::Missing required repository secret(s): ${missing[*]}."
+            echo "::error::Set them in the repository's Actions secrets."
             exit 1
           fi
           echo "Required secrets present."

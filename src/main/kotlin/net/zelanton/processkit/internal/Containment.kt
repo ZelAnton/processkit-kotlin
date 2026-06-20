@@ -3,6 +3,7 @@ package net.zelanton.processkit.internal
 import net.zelanton.processkit.Mechanism
 import net.zelanton.processkit.ProcessException
 import net.zelanton.processkit.ProcessGroupStats
+import net.zelanton.processkit.ResourceLimits
 import net.zelanton.processkit.Signal
 import java.io.IOException
 import java.lang.foreign.Arena
@@ -88,10 +89,10 @@ internal interface Containment : AutoCloseable {
     }
 
     companion object {
-        fun create(): Containment =
+        fun create(limits: ResourceLimits = ResourceLimits()): Containment =
             when (Os.current) {
-                Os.WINDOWS -> WindowsJobContainment()
-                Os.LINUX -> PosixGroupContainment()
+                Os.WINDOWS -> WindowsJobContainment(limits)
+                Os.LINUX -> PosixGroupContainment(limits)
                 // macOS lacks the `setsid` launcher this backend uses; the native
                 // posix_spawn backend lands in a later increment.
                 Os.MACOS -> throw IOException(
@@ -131,7 +132,19 @@ internal fun newProcessBuilder(
  * reaps the whole group. A `setsid` descendant can still escape — the honest
  * weakness of this mechanism, reported as [Mechanism.PROCESS_GROUP].
  */
-internal class PosixGroupContainment : Containment {
+internal class PosixGroupContainment(
+    limits: ResourceLimits = ResourceLimits(),
+) : Containment {
+    init {
+        // No whole-tree limit primitive without a cgroup; fail fast rather than
+        // leave the tree silently unbounded.
+        if (limits.any()) {
+            throw ProcessException.ResourceLimit(
+                "resource limits need a Job Object or cgroup; the process-group backend cannot enforce them",
+            )
+        }
+    }
+
     override val mechanism: Mechanism = Mechanism.PROCESS_GROUP
 
     private val lock = Any()
@@ -252,10 +265,20 @@ internal class PosixGroupContainment : Containment {
  * `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`: every assigned process — and everything
  * it spawns — is terminated when the job is closed or terminated.
  */
-internal class WindowsJobContainment : Containment {
+internal class WindowsJobContainment(
+    limits: ResourceLimits = ResourceLimits(),
+) : Containment {
+    init {
+        if (limits.cpuQuota != null) {
+            throw ProcessException.ResourceLimit(
+                "cpuQuota is not yet enforced (Windows CPU rate control lands in a later increment)",
+            )
+        }
+    }
+
     override val mechanism: Mechanism = Mechanism.JOB_OBJECT
 
-    private val job: MemorySegment = Win32.createKillOnCloseJob()
+    private val job: MemorySegment = Win32.createContainedJob(limits.memoryMax, limits.maxProcesses)
     private val lock = Any()
     private var closed = false
 
@@ -406,6 +429,8 @@ internal object Libc {
 internal object Win32 {
     private const val JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS: Int = 9
     private const val JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: Int = 0x2000
+    private const val JOB_OBJECT_LIMIT_ACTIVE_PROCESS: Int = 0x8
+    private const val JOB_OBJECT_LIMIT_JOB_MEMORY: Int = 0x200
     private const val PROCESS_TERMINATE: Int = 0x0001
     private const val PROCESS_SET_QUOTA: Int = 0x0100
 
@@ -489,6 +514,10 @@ internal object Win32 {
         )
     private val limitFlagsOffset: Long =
         extendedLimitLayout.byteOffset(MemoryLayout.PathElement.groupElement("LimitFlags"))
+    private val activeProcessLimitOffset: Long =
+        extendedLimitLayout.byteOffset(MemoryLayout.PathElement.groupElement("ActiveProcessLimit"))
+    private val jobMemoryLimitOffset: Long =
+        extendedLimitLayout.byteOffset(MemoryLayout.PathElement.groupElement("JobMemoryLimit"))
     private val peakJobMemoryUsedOffset: Long =
         extendedLimitLayout.byteOffset(MemoryLayout.PathElement.groupElement("PeakJobMemoryUsed"))
 
@@ -525,7 +554,14 @@ internal object Win32 {
     private val activeProcessesOffset: Long =
         basicAccountingLayout.byteOffset(MemoryLayout.PathElement.groupElement("ActiveProcesses"))
 
-    internal fun createKillOnCloseJob(): MemorySegment {
+    /**
+     * Create a kill-on-close Job Object, optionally capping total committed memory
+     * ([memoryMax] bytes) and live process count ([maxProcesses]) for the tree.
+     */
+    internal fun createContainedJob(
+        memoryMax: Long?,
+        maxProcesses: Int?,
+    ): MemorySegment {
         val job = createJobObjectW.invoke(MemorySegment.NULL, MemorySegment.NULL) as MemorySegment
         if (job.address() == 0L) {
             throwLastError("CreateJobObjectW")
@@ -535,7 +571,16 @@ internal object Win32 {
         // that outlives the arena.
         Arena.ofConfined().use { arena ->
             val info = arena.allocate(extendedLimitLayout)
-            info.set(ValueLayout.JAVA_INT, limitFlagsOffset, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)
+            var flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            if (memoryMax != null) {
+                flags = flags or JOB_OBJECT_LIMIT_JOB_MEMORY
+                info.set(ValueLayout.JAVA_LONG, jobMemoryLimitOffset, memoryMax)
+            }
+            if (maxProcesses != null) {
+                flags = flags or JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+                info.set(ValueLayout.JAVA_INT, activeProcessLimitOffset, maxProcesses)
+            }
+            info.set(ValueLayout.JAVA_INT, limitFlagsOffset, flags)
             val ok =
                 setInformationJobObject.invoke(
                     job,

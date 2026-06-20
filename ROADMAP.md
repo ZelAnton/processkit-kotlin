@@ -407,9 +407,13 @@ Effort in parentheses. The **lean-core / 0.1** boundary is marked.
     *Deferred to 10b:* per-run `RunProfile` / `RunningProcess.{cpuTime,
     peakMemoryBytes, profile}` (per-process `/proc` parsing + `GetProcessTimes` /
     memory FFM).
-11. **limits** *(M)* — whole-tree caps (`memoryMax` / `maxProcesses` /
-    `cpuQuota`) on Job Object + cgroup; `ResourceLimit` (never a silently
-    unbounded group) when a cap can't be enforced.
+11. **limits** *(M)* — **done (11a)**: `ResourceLimits(memoryMax / maxProcesses /
+    cpuQuota)` via `ProcessGroup(limits)`; the Windows Job Object enforces
+    `memoryMax` + `maxProcesses`; an unenforceable cap (process-group backend, or
+    `cpuQuota`) fails fast with `ProcessException.ResourceLimit` — never a silently
+    unbounded group. *Deferred to 11b:* the Linux cgroup v2 backend (only usable
+    at the real cgroup root — not in containers / under systemd, so untestable in
+    Docker CI) and Windows `cpuQuota` via CPU rate control.
 12. **observability — replaces `tracing`** *(S)* — the optional **SLF4J** logger
     (package default = no-op without a binding): spawn/exit, timeout/cancel,
     teardown, retries, storms. **Never logs argv or env.** The JVM's standard

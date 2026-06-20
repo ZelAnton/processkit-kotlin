@@ -28,13 +28,18 @@ import kotlin.time.Duration.Companion.seconds
  * A per-run `timeout` (or a cancelled run) kills only that child's subtree, not
  * its siblings; [close] is the guaranteed backstop for the whole tree.
  *
+ * Pass [ResourceLimits] to cap the whole tree's memory / process count. The caps
+ * are applied to the kernel container at construction, so an unenforceable limit
+ * fails fast here with [ProcessException.ResourceLimit] (see [ResourceLimits]).
+ *
  * Safe for concurrent use: [execute] / [start] may be called from many coroutines
  * at once, and [close] / [shutdown] are idempotent.
  */
-public class ProcessGroup :
-    ProcessRunner,
+public class ProcessGroup(
+    limits: ResourceLimits = ResourceLimits(),
+) : ProcessRunner,
     AutoCloseable {
-    private val containment: Containment = newContainment("process-group")
+    private val containment: Containment = newContainment("process-group", limits)
     private val lock = Any()
     private var closed = false
 

@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Resource limits: `ProcessGroup(ResourceLimits(...))` caps the whole tree's
+  committed memory (`memoryMax`) and live process count (`maxProcesses`), enforced
+  by the Windows Job Object. A cap that can't be enforced — any limit on the
+  process-group backend, or `cpuQuota` (not yet implemented) — fails fast at
+  construction with the new `ProcessException.ResourceLimit`, never silently
+  leaving the tree unbounded.
 - Group stats: `ProcessGroup.stats()` returns a `ProcessGroupStats` snapshot
   (active process count and, under a Job Object, total CPU time and peak memory;
   `null` on the process-group backend), and `sampleStats(every)` is a `Flow` of

@@ -12,10 +12,17 @@ import java.io.IOException
 import java.nio.file.Files
 import kotlin.time.Duration
 
-/** Create a fresh private containment, mapping a creation failure to a typed error. */
-internal fun newContainment(program: String): Containment =
+/**
+ * Create a fresh private containment, mapping a creation failure to a typed error.
+ * An unenforceable [limits] surfaces as [ProcessException.ResourceLimit] (thrown by
+ * the backend, propagated unchanged).
+ */
+internal fun newContainment(
+    program: String,
+    limits: ResourceLimits = ResourceLimits(),
+): Containment =
     try {
-        Containment.create()
+        Containment.create(limits)
     } catch (cause: IOException) {
         throw ProcessException.Spawn(program, cause)
     }

@@ -62,4 +62,14 @@ public abstract class ProcessException internal constructor(
     public class Unsupported internal constructor(
         public val operation: String,
     ) : ProcessException("operation not supported on this platform: $operation")
+
+    /**
+     * A [ResourceLimits] cap could not be enforced — the platform/mechanism has no
+     * whole-tree limit primitive (the [Mechanism.PROCESS_GROUP] backend), or the
+     * specific cap is not yet implemented. Raised eagerly at `ProcessGroup`
+     * construction, never silently leaving the tree unbounded.
+     */
+    public class ResourceLimit internal constructor(
+        message: String,
+    ) : ProcessException(message)
 }
