@@ -18,7 +18,7 @@ ktlint-plugin = "14.2.0"
 # Maven Central publishing. Plain `maven-publish` cannot talk to the Sonatype
 # Central Portal (the only path since OSSRH shut down); this plugin can. 0.34+
 # supports Gradle 9.
-maven-publish-plugin = "0.36.0"
+maven-publish-plugin = "0.37.0"
 # Foojay toolchain resolver — lets Gradle DOWNLOAD the JDK 25 toolchain when it
 # isn't already installed (jvmToolchain(25) only declares the requirement).
 foojay-resolver = "1.0.0"
@@ -32,16 +32,16 @@ kover = "0.9.8"
 # Kotlin coroutines — the async core of the library (suspend verbs, Flow
 # streaming, structured-concurrency cancellation). The `-test` artifact provides
 # runTest + the virtual clock used to test timeouts/backoff without real waits.
-kotlinx-coroutines = "1.10.2"
+kotlinx-coroutines = "1.11.0"
 # SLF4J — the standard JVM logging facade. The library logs through the API only;
 # consumers add a binding (logback, etc.). 2.0.x defaults to a no-op (no binding
 # required). logback (test-only) provides a binding + ListAppender for asserting
 # on log output.
-slf4j = "2.0.16"
-logback = "1.5.25"
+slf4j = "2.0.18"
+logback = "1.5.36"
 # kotlinx.serialization — the cassette (record/replay) JSON format. The compiler
 # plugin is versioned with Kotlin; the runtime is declared here.
-kotlinx-serialization = "1.8.0"
+kotlinx-serialization = "1.11.0"
 
 [libraries]
 # JUnit BOM — aligns every junit-* artifact to one version; the dependencies
