@@ -100,8 +100,8 @@ tasks.test {
 configurations.matching { it.name.startsWith("ktlint") }.configureEach {
     resolutionStrategy {
         force(
-            "ch.qos.logback:logback-classic:1.5.25",
-            "ch.qos.logback:logback-core:1.5.25",
+            "ch.qos.logback:logback-classic:1.5.36",
+            "ch.qos.logback:logback-core:1.5.36",
         )
     }
 }
