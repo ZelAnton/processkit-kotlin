@@ -9,16 +9,16 @@
 [versions]
 # Kotlin 2.3 is the first release with JDK 25 support; on 2.2 the compiler
 # silently falls back to the JVM 24 bytecode target under a JDK 25 toolchain.
-kotlin = "2.4.0"
+kotlin = "2.4.20"
 # JUnit 6 (Jupiter) requires Java 17+ — fine here, the toolchain is JDK 25.
-junit = "6.1.0"
+junit = "6.1.3"
 # ktlint-gradle 14.0.1+ fixed worker launching under a JDK 25 toolchain whose
 # path contains spaces (e.g. C:\Program Files\...); do not pin below 14.
 ktlint-plugin = "14.2.0"
 # Maven Central publishing. Plain `maven-publish` cannot talk to the Sonatype
 # Central Portal (the only path since OSSRH shut down); this plugin can. 0.34+
 # supports Gradle 9.
-maven-publish-plugin = "0.36.0"
+maven-publish-plugin = "0.37.0"
 # Foojay toolchain resolver — lets Gradle DOWNLOAD the JDK 25 toolchain when it
 # isn't already installed (jvmToolchain(25) only declares the requirement).
 foojay-resolver = "1.0.0"
@@ -26,22 +26,22 @@ foojay-resolver = "1.0.0"
 # the build on an unintended change. The standalone plugin is frozen (folded
 # into the Kotlin Gradle Plugin 2.2+), but its maintainers recommend it for
 # production until the KGP-native API stabilizes.
-binary-compatibility-validator = "0.18.1"
+binary-compatibility-validator = "0.18.2"
 # Kover — Kotlin code coverage (JetBrains). Adds koverHtmlReport / koverVerify.
-kover = "0.9.8"
+kover = "0.9.9"
 # Kotlin coroutines — the async core of the library (suspend verbs, Flow
 # streaming, structured-concurrency cancellation). The `-test` artifact provides
 # runTest + the virtual clock used to test timeouts/backoff without real waits.
-kotlinx-coroutines = "1.10.2"
+kotlinx-coroutines = "1.11.0"
 # SLF4J — the standard JVM logging facade. The library logs through the API only;
 # consumers add a binding (logback, etc.). 2.0.x defaults to a no-op (no binding
 # required). logback (test-only) provides a binding + ListAppender for asserting
 # on log output.
-slf4j = "2.0.16"
-logback = "1.5.25"
+slf4j = "2.0.19"
+logback = "1.6.3"
 # kotlinx.serialization — the cassette (record/replay) JSON format. The compiler
 # plugin is versioned with Kotlin; the runtime is declared here.
-kotlinx-serialization = "1.8.0"
+kotlinx-serialization = "1.11.0"
 
 [libraries]
 # JUnit BOM — aligns every junit-* artifact to one version; the dependencies
